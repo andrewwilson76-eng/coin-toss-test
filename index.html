@@ -1,13 +1,166 @@
-<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><title>Coin Toss Throw Test 0.2</title>
-<style>body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:#111;color:#fff;margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center}main{width:min(92vw,520px);text-align:center;padding:24px 18px}h1{font-size:36px;margin:0 0 4px}p{color:#aaa}button{font-size:21px;font-weight:700;padding:16px 26px;border:0;border-radius:15px;background:#fff;color:#111;margin:8px}#status{font-size:26px;margin:22px 0;min-height:34px}.grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}.card{background:#222;border-radius:14px;padding:14px}.label{color:#999;font-size:13px;text-transform:uppercase}.value{font-size:28px;font-weight:800;margin-top:5px}.meter{height:16px;background:#333;border-radius:10px;overflow:hidden;margin:14px 0}.bar{height:100%;width:0;background:#fff}small{display:block;color:#888;line-height:1.5}</style></head>
-<body><main><h1>🪙 COIN TOSS</h1><p>Throw Test 0.2</p><button id="start">READY</button><button id="reset" style="display:none">RESET</button><div id="status">Press READY, then make a short wrist flick.</div>
-<div class="grid"><div class="card"><div class="label">Power</div><div id="power" class="value">0%</div></div><div class="card"><div class="label">Direction</div><div id="direction" class="value">—</div></div><div class="card"><div class="label">Peak accel.</div><div id="accel" class="value">0</div></div><div class="card"><div class="label">Rotation</div><div id="rotation" class="value">—</div></div></div>
-<div class="meter"><div id="bar" class="bar"></div></div><small id="detail">This version records more information about each flick so we can tune the real throw.</small></main>
+<!doctype html>
+<html lang="en">
+<head>
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+<title>Coin Toss 0.3</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;background:#111;color:#fff;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;min-height:100vh;display:flex;justify-content:center}
+main{width:min(100vw,520px);padding:18px;text-align:center}
+h1{margin:4px 0;font-size:34px}
+.sub{color:#aaa;margin:0 0 12px}
+canvas{display:block;width:100%;height:auto;background:#222;border-radius:18px;touch-action:none}
+button{font-size:21px;font-weight:800;padding:15px 28px;border:0;border-radius:15px;margin:12px 5px;background:#fff;color:#111}
+#status{font-size:24px;font-weight:700;min-height:32px;margin:10px 0}
+#stats{color:#aaa;font-size:14px;line-height:1.5}
+</style>
+</head>
+<body>
+<main>
+<h1>🪙 COIN TOSS</h1>
+<p class="sub">Prototype 0.3 — Throw the coin to the wall</p>
+<canvas id="game" width="484" height="650"></canvas>
+<div id="status">Press READY</div>
+<button id="ready">READY</button>
+<button id="again" style="display:none">THROW AGAIN</button>
+<div id="stats">Your phone flick controls the first experimental throw.</div>
+</main>
+
 <script>
-let active=false,samples=[],timer=null,lastEvent=0;const $=id=>document.getElementById(id);const mag=(x,y,z)=>Math.sqrt(x*x+y*y+z*z);
-function motion(e){if(!active)return;const a=e.acceleration,ag=e.accelerationIncludingGravity,r=e.rotationRate,t=performance.now();if(!ag)return;const x=ag.x||0,y=ag.y||0,z=ag.z||0,ax=a?(a.x||0):0,ay=a?(a.y||0):0,az=a?(a.z||0):0,am=mag(ax,ay,az);samples.push({t,ax,ay,az,am,rx:r?(r.alpha||0):0,ry:r?(r.beta||0):0,rz:r?(r.gamma||0):0});if(am>6&&t-lastEvent>700){lastEvent=t;finish()}}
-function finish(){active=false;if(!samples.length)return;let s=samples.reduce((m,x)=>x.am>m.am?x:m,samples[0]),peak=s.am,p=Math.max(0,Math.min(100,Math.round(peak/18*100))),dir=Math.atan2(s.ay,s.ax)*180/Math.PI,rot=mag(s.rx,s.ry,s.rz);$("power").textContent=p+"%";$("bar").style.width=p+"%";$("direction").textContent=Math.round(dir)+"°";$("accel").textContent=peak.toFixed(1);$("rotation").textContent=Math.round(rot)+"°/s";$("status").textContent="THROW DETECTED!";$("detail").textContent="Captured "+samples.length+" motion samples.";$("reset").style.display="inline-block";$("start").style.display="none"}
-async function permission(){if(typeof DeviceMotionEvent!=="undefined"&&typeof DeviceMotionEvent.requestPermission==="function"){const p=await DeviceMotionEvent.requestPermission();if(p!=="granted")throw Error("Motion permission was not granted.")}}
-$("start").onclick=async()=>{try{await permission();samples=[];active=true;lastEvent=0;$("status").textContent="READY — FLICK!";$("power").textContent="0%";$("direction").textContent="—";$("accel").textContent="0";$("rotation").textContent="—";$("bar").style.width="0%";$("detail").textContent="Make one short, controlled flick. Keep the phone in your hand.";window.addEventListener("devicemotion",motion);clearTimeout(timer);timer=setTimeout(()=>{if(active){active=false;$("status").textContent="No clear flick detected — try again."}},5000)}catch(err){$("status").textContent="Motion permission needed.";$("detail").textContent=err.message}};
-$("reset").onclick=()=>{active=false;samples=[];clearTimeout(timer);$("power").textContent="0%";$("direction").textContent="—";$("accel").textContent="0";$("rotation").textContent="—";$("bar").style.width="0%";$("status").textContent="Press READY, then make a short wrist flick.";$("detail").textContent="No motion recorded yet.";$("reset").style.display="none";$("start").style.display="inline-block"};
-</script></body></html>
+const canvas=document.getElementById("game"),ctx=canvas.getContext("2d");
+const W=canvas.width,H=canvas.height;
+const coin={x:W/2,y:H-80,vx:0,vy:0,spin:0,angle:0,r:23};
+let state="idle",samples=[],last=0,timer=null;
+
+function draw(){
+ ctx.clearRect(0,0,W,H);
+ // play surface
+ ctx.fillStyle="#333";ctx.fillRect(18,18,W-36,H-36);
+ // wall
+ ctx.fillStyle="#777";ctx.fillRect(18,42,W-36,16);
+ ctx.font="bold 16px -apple-system,BlinkMacSystemFont,sans-serif";
+ ctx.fillStyle="#ddd";ctx.textAlign="center";ctx.fillText("WALL",W/2,34);
+ // centre guide
+ ctx.setLineDash([6,8]);ctx.strokeStyle="#666";ctx.beginPath();ctx.moveTo(W/2,58);ctx.lineTo(W/2,H-45);ctx.stroke();ctx.setLineDash([]);
+ // coin
+ ctx.save();ctx.translate(coin.x,coin.y);ctx.rotate(coin.angle);
+ ctx.beginPath();ctx.arc(0,0,coin.r,0,Math.PI*2);ctx.fillStyle="#c9a227";ctx.fill();
+ ctx.lineWidth=4;ctx.strokeStyle="#f2d36b";ctx.stroke();
+ ctx.fillStyle="#6f5510";ctx.font="bold 22px serif";ctx.textAlign="center";ctx.textBaseline="middle";
+ ctx.fillText("10p",0,0);
+ ctx.restore();
+ if(state==="idle"){
+   ctx.fillStyle="#aaa";ctx.font="16px sans-serif";ctx.textAlign="center";ctx.fillText("Flick the phone after READY",W/2,H-22);
+ }
+ requestAnimationFrame(draw);
+}
+draw();
+
+function magnitude(x,y,z){return Math.sqrt(x*x+y*y+z*z)}
+
+function motion(e){
+ if(state!=="armed")return;
+ const a=e.acceleration, g=e.accelerationIncludingGravity, r=e.rotationRate;
+ if(!g)return;
+ const ax=a?(a.x||0):0, ay=a?(a.y||0):0, az=a?(a.z||0):0;
+ const amag=magnitude(ax,ay,az);
+ const gx=g.x||0,gy=g.y||0,gz=g.z||0;
+ const t=performance.now();
+ samples.push({t,ax,ay,az,amag,gx,gy,gz,rx:r?(r.alpha||0):0,ry:r?(r.beta||0):0,rz:r?(r.gamma||0):0});
+ // First-pass flick detector. We will tune this from real throws.
+ if(amag>6 && t-last>700){
+   last=t;launch();
+ }
+}
+
+function launch(){
+ state="flying";clearTimeout(timer);
+ if(!samples.length)return;
+ const peak=samples.reduce((m,s)=>Math.max(m,s.amag),0);
+ const s=samples.reduce((m,x)=>x.amag>m.amag?x:m,samples[0]);
+ // Map acceleration into a controllable game speed.
+ const power=Math.max(.35,Math.min(1.0,peak/14));
+ // Use the direction of the screen-plane acceleration for the experimental aim.
+ let angle=Math.atan2(s.ay,s.ax);
+ // Flip so the default forward throw travels toward the wall.
+ let speed=7+power*12;
+ coin.x=W/2;coin.y=H-80;
+ coin.vx=Math.cos(angle)*speed;
+ coin.vy=-Math.abs(Math.sin(angle))*speed-speed*.65;
+ // Keep throws generally aimed into the play area.
+ if(Math.abs(coin.vy)<3) coin.vy=-speed;
+ coin.spin=(s.rz||0)*0.035;
+ coin.angle=0;
+ document.getElementById("status").textContent="🪙 THROW!";
+ document.getElementById("ready").style.display="none";
+ document.getElementById("again").style.display="none";
+ document.getElementById("stats").textContent=
+   `Power ${Math.round(power*100)}% · Speed ${speed.toFixed(1)} · Spin ${Math.round(Math.abs(coin.spin)*10)}`
+}
+
+function physics(){
+ if(state!=="flying")return;
+ coin.x+=coin.vx;coin.y+=coin.vy;coin.angle+=coin.spin;
+ // side walls
+ if(coin.x<42){coin.x=42;coin.vx=Math.abs(coin.vx)*.72}
+ if(coin.x>W-42){coin.x=W-42;coin.vx=-Math.abs(coin.vx)*.72}
+ // wall
+ if(coin.y-coin.r<=58){
+   coin.y=58+coin.r;coin.vy=Math.abs(coin.vy)*.58;coin.vx*=.82;
+ }
+ // gravity/friction
+ coin.vy+=0.18;
+ coin.vx*=0.997;
+ coin.spin*=0.999;
+ // stop
+ if(coin.y>H-82 && Math.abs(coin.vy)<1.1){
+   coin.y=H-82;coin.vy=0;coin.vx*=0.85;
+   if(Math.abs(coin.vx)<0.15){
+     state="result";
+     const wallDistance=Math.round(coin.y-58);
+     document.getElementById("status").textContent="THROW COMPLETE";
+     document.getElementById("stats").textContent=
+       `Coin stopped · horizontal position ${Math.round(coin.x)} · experimental result`;
+     document.getElementById("again").style.display="inline-block";
+   }
+ }
+ requestAnimationFrame(physics);
+}
+
+async function permission(){
+ if(typeof DeviceMotionEvent!=="undefined"&&typeof DeviceMotionEvent.requestPermission==="function"){
+   const p=await DeviceMotionEvent.requestPermission();
+   if(p!=="granted")throw Error("Motion permission was not granted.");
+ }
+}
+
+document.getElementById("ready").onclick=async()=>{
+ try{
+   await permission();
+   samples=[];state="armed";last=0;
+   document.getElementById("status").textContent="READY — FLICK!";
+   document.getElementById("stats").textContent="Make one short, controlled flick. Keep hold of the phone.";
+   clearTimeout(timer);
+   timer=setTimeout(()=>{
+     if(state==="armed"){state="idle";document.getElementById("status").textContent="No throw detected — try again."}
+   },5000);
+ }catch(e){
+   document.getElementById("status").textContent="Motion permission needed.";
+   document.getElementById("stats").textContent=e.message;
+ }
+};
+
+document.getElementById("again").onclick=()=>{
+ coin.x=W/2;coin.y=H-80;coin.vx=0;coin.vy=0;coin.angle=0;coin.spin=0;
+ document.getElementById("again").style.display="none";
+ document.getElementById("ready").style.display="inline-block";
+ document.getElementById("status").textContent="Press READY";
+ document.getElementById("stats").textContent="Ready for another experimental throw.";
+ state="idle";
+};
+
+window.addEventListener("devicemotion",motion);
+setInterval(()=>{if(state==="flying")physics()},16);
+</script>
+</body>
+</html>
