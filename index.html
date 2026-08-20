@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Coin Toss — Throw Test</title>
+<style>
+  body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:#111;color:#fff;margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center}
+  main{width:min(92vw,520px);text-align:center;padding:28px 18px}
+  h1{font-size:38px;margin:0 0 8px} p{color:#bbb}
+  button{font-size:22px;font-weight:700;padding:18px 28px;border:0;border-radius:16px;background:#fff;color:#111;margin:10px}
+  #status{font-size:28px;margin:28px 0 8px;min-height:36px}
+  #power{font-size:64px;font-weight:800;margin:0}
+  .meter{height:18px;background:#333;border-radius:10px;overflow:hidden;margin:18px 0}
+  #bar{height:100%;width:0;background:#fff;transition:width .08s}
+  small{display:block;color:#888;line-height:1.5}
+</style>
+</head>
+<body>
+<main>
+  <h1>🪙 COIN TOSS</h1>
+  <p>Throw Test 0.1</p>
+  <button id="start">READY</button>
+  <button id="reset" style="display:none">RESET</button>
+  <div id="status">Press READY, then flick the phone.</div>
+  <div id="power">0%</div>
+  <div class="meter"><div id="bar"></div></div>
+  <small id="detail">No motion recorded yet.</small>
+</main>
+<script>
+let active=false, peak=0, last=0, timer=null;
+const statusEl=document.getElementById('status'), powerEl=document.getElementById('power');
+const bar=document.getElementById('bar'), detail=document.getElementById('detail');
+const start=document.getElementById('start'), reset=document.getElementById('reset');
+
+async function permission(){
+  if(typeof DeviceMotionEvent!=="undefined" &&
+     typeof DeviceMotionEvent.requestPermission==="function"){
+    const p=await DeviceMotionEvent.requestPermission();
+    if(p!=="granted") throw new Error("Motion permission was not granted.");
+  }
+}
+function motion(e){
+  if(!active) return;
+  const a=e.accelerationIncludingGravity || e.acceleration;
+  if(!a) return;
+  const x=a.x||0,y=a.y||0,z=a.z||0;
+  const mag=Math.sqrt(x*x+y*y+z*z);
+  if(mag>peak) peak=mag;
+  // A deliberately simple first-pass detector. We'll tune it after real tests.
+  if(mag>18 && (Date.now()-last)>700){
+    last=Date.now();
+    const pct=Math.min(100,Math.round((mag-9.8)/18*100));
+    powerEl.textContent=pct+"%";
+    bar.style.width=pct+"%";
+    statusEl.textContent="THROW DETECTED!";
+    detail.textContent=`Peak motion: ${mag.toFixed(1)} m/s²`;
+    active=false;
+    reset.style.display="inline-block";
+    start.style.display="none";
+  }
+}
+start.onclick=async()=>{
+  try{
+    await permission();
+    peak=0; active=true; last=0;
+    statusEl.textContent="READY — FLICK!";
+    powerEl.textContent="0%"; bar.style.width="0%";
+    detail.textContent="Make a short, controlled wrist flick.";
+    window.addEventListener("devicemotion",motion);
+    setTimeout(()=>{ if(active){active=false;statusEl.textContent="No throw detected — try again."; }},6000);
+  }catch(err){
+    statusEl.textContent="Motion permission needed.";
+    detail.textContent=err.message;
+  }
+};
+reset.onclick=()=>{active=false;peak=0;powerEl.textContent="0%";bar.style.width="0%";statusEl.textContent="Press READY, then flick the phone.";detail.textContent="No motion recorded yet.";reset.style.display="none";start.style.display="inline-block";};
+</script>
+</body>
+</html>
