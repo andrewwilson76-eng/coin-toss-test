@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
-<title>Stack It 1.2</title>
+<title>Stack It 1.3</title>
 <style>
 *{box-sizing:border-box}body{margin:0;background:#12101e;color:#fff;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;display:flex;justify-content:center;min-height:100vh}
 main{width:min(100vw,520px);padding:14px;text-align:center}h1{font-size:38px;margin:4px 0}.sub{color:#bbb;margin:0 0 10px}
@@ -20,11 +20,13 @@ button{font-size:22px;font-weight:800;border:0;border-radius:16px;padding:14px 3
 const c=document.getElementById("game"),ctx=c.getContext("2d"),W=c.width,H=c.height;
 const FLOOR=610,BH=28,WALL=16,colors=["#ff4d6d","#ffb703","#00d4ff","#7cff6b","#b66cff","#ff7a00"];
 let state="menu",score=0,blocks=[],current=null,dir=1;
-let camera=0,shake=0,worldLean=0,worldLeanV=0,instability=0,collapseStart=0;
+let camera=0,shake=0,worldLean=0,worldLeanV=0,instability=0,collapseStart=0,newBest=false;
+let bestBlocks=0;
+try{bestBlocks=Number(localStorage.getItem("stackItBestBlocks")||0)}catch(e){}
 const statusEl=document.getElementById("status"),scoreEl=document.getElementById("score");
 
 function start(){
- state="playing";score=0;blocks=[];camera=0;shake=0;worldLean=0;worldLeanV=0;instability=0;
+ state="playing";score=0;blocks=[];camera=0;shake=0;worldLean=0;worldLeanV=0;instability=0;newBest=false;
  blocks.push({x:W/2-52.5,y:FLOOR-BH,w:105,h:BH,color:"#fff",angle:0,vx:0,vy:0,falling:false});
  spawn();ui();
 }
@@ -36,7 +38,9 @@ function spawn(){
  dir=Math.random()<.5?-1:1;
 }
 function level(){return 1+Math.floor(Math.max(0,blocks.length-1)/10)}
-function ui(){scoreEl.textContent=`Score: ${score} • Blocks: ${blocks.length} • Speed: ${level()}`}
+function placed(){return Math.max(0,blocks.length-1)}
+function nextTarget(){return Math.max(10,Math.ceil((bestBlocks+1)/10)*10)}
+function ui(){scoreEl.textContent=`Score: ${score} • Blocks: ${placed()} • Best: ${bestBlocks} • Target: ${nextTarget()} • Speed: ${level()}`}
 function overlap(a,b){return Math.max(0,Math.min(a.x+a.w,b.x+b.w)-Math.max(a.x,b.x))}
 function centre(b){return b.x+b.w/2}
 
@@ -98,7 +102,8 @@ function draw(){
    ctx.fillStyle="rgba(0,0,0,.62)";ctx.fillRect(0,0,W,H);
    ctx.fillStyle="#fff";ctx.font="bold 38px Arial";ctx.fillText("TOWER COLLAPSED",W/2,245);
    ctx.font="bold 28px Arial";ctx.fillText("Score "+score,W/2,295);
-   ctx.font="18px Arial";ctx.fillText("Tap PLAY to try again",W/2,335);
+   ctx.font="bold 20px Arial";ctx.fillText(`Best ${bestBlocks} blocks`,W/2,330);
+   ctx.font="18px Arial";ctx.fillText("Tap PLAY to try again",W/2,365);
  }
  requestAnimationFrame(draw);
 }
@@ -106,6 +111,12 @@ function draw(){
 function collapse(message){
  if(state!=="playing")return;
  state="collapsing";collapseStart=performance.now();shake=18;statusEl.textContent=message;
+ const finishedBlocks=placed();
+ if(finishedBlocks>bestBlocks){
+   bestBlocks=finishedBlocks;newBest=true;
+   try{localStorage.setItem("stackItBestBlocks",String(bestBlocks))}catch(e){}
+ }
+ ui();
  for(let i=1;i<blocks.length;i++){
    const b=blocks[i];b.falling=true;b.vx=(Math.random()-.5)*3.5+(centre(b)-W/2)*.008;b.vy=-Math.random()*2;b.av=(Math.random()-.5)*.055;
  }
@@ -236,9 +247,14 @@ function physics(){
  if(state==="collapsing"){
    camera*=.94;
    const debris=blocks.slice(1).concat(current?[current]:[]);
+   const baseCentre=centre(blocks[0]);
    for(const b of debris){
      if(!b.falling)continue;
-     b.vy=(b.vy||0)+.42;b.x+=b.vx||0;b.y+=b.vy;b.angle+=b.av||0;
+     // Gravity pulls down while a gentle inward force gathers the collapse
+     // around the original foundation block like a building implosion.
+     b.vx=(b.vx||0)+(baseCentre-centre(b))*.0032;
+     b.vx=Math.max(-5,Math.min(5,b.vx));
+     b.vy=(b.vy||0)+.42;b.x+=b.vx;b.y+=b.vy;b.angle+=b.av||0;
      if(b.x<WALL){b.x=WALL;b.vx=Math.abs(b.vx||0)*.62;b.av*=-.7}
      if(b.x+b.w>W-WALL){b.x=W-WALL-b.w;b.vx=-Math.abs(b.vx||0)*.62;b.av*=-.7}
      if(b.y+b.h>FLOOR){
@@ -246,16 +262,17 @@ function physics(){
        if(Math.abs(b.vy)<.55){b.vy=0;b.vx*=.8;b.av*=.8}
      }
    }
-   // Basic brick-on-brick support makes a loose, uneven rubble pile.
-   for(let i=0;i<debris.length;i++)for(let j=0;j<debris.length;j++){
-     if(i===j)continue;const a=debris[i],b=debris[j];
+   // Include the original foundation as the centre of the rubble pile.
+   const supports=[blocks[0],...debris];
+   for(let i=0;i<debris.length;i++)for(let j=0;j<supports.length;j++){
+     const a=debris[i],b=supports[j];if(a===b)continue;
      if(a.vy>0&&a.y+a.h>=b.y&&a.y+a.h<=b.y+12&&overlap(a,b)>10){
        a.y=b.y-a.h;a.vy=-a.vy*.18;a.vx*=.88;a.av*=.86;
      }
    }
    // Let the player watch the full fall before showing the results overlay.
-   if(performance.now()-collapseStart>2600){
-     state="gameover";shake=0;statusEl.textContent="TOWER COLLAPSED";
+   if(performance.now()-collapseStart>3200){
+     state="gameover";shake=0;statusEl.textContent=newBest?"🏆 NEW HIGH SCORE!":"TOWER COLLAPSED";
    }
  }
 
@@ -273,5 +290,5 @@ function physics(){
 }
 document.getElementById("play").onclick=start;
 c.addEventListener("pointerdown",drop);
-draw();physics();
+ui();draw();physics();
 </script></body></html>
