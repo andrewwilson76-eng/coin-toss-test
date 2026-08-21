@@ -2,128 +2,152 @@
 <html lang="en">
 <head>
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
-<title>Stack It 0.3</title>
+<title>Stack It 0.4</title>
 <style>
-*{box-sizing:border-box}body{margin:0;background:#17132a;color:#fff;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;display:flex;justify-content:center;min-height:100vh}
+*{box-sizing:border-box}body{margin:0;background:#151226;color:#fff;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;display:flex;justify-content:center;min-height:100vh}
 main{width:min(100vw,520px);padding:14px;text-align:center}h1{font-size:38px;margin:4px 0}.sub{color:#bbb;margin:0 0 10px}
 canvas{width:100%;height:auto;border-radius:22px;display:block;background:#272044;touch-action:manipulation}
 button{font-size:22px;font-weight:800;border:0;border-radius:16px;padding:14px 30px;margin:12px 0;background:#fff;color:#17132a}
 #status{font-size:23px;font-weight:800;min-height:30px}#score{font-size:18px;color:#ddd}
 </style></head>
 <body><main>
-<h1>🧱 STACK IT</h1><p class="sub">Tap to drop • Keep the tower balanced</p>
+<h1>🧱 STACK IT</h1><p class="sub">Tap to drop • Keep the tower standing</p>
 <canvas id="game" width="484" height="650"></canvas>
 <div id="status">READY?</div><div id="score">Score: 0 • Level 1</div>
 <button id="play">PLAY</button>
 </main>
 <script>
 const c=document.getElementById("game"),ctx=c.getContext("2d"),W=c.width,H=c.height;
-const colours=["#ff4d6d","#ffb703","#00d4ff","#7cff6b","#b66cff","#ff7a00"];
-const FLOOR=585, BLOCK_H=32;
+const FLOOR=585,BH=28,colors=["#ff4d6d","#ffb703","#00d4ff","#7cff6b","#b66cff","#ff7a00"];
 let state="menu",score=0,level=1,blocks=[],current=null,dir=1;
-let cameraY=0,targetCameraY=0,shake=0;
+let camera=0,shake=0,tilt=0,falling=false;
+const statusEl=document.getElementById("status"),scoreEl=document.getElementById("score");
 
 function start(){
- state="playing";score=0;level=1;cameraY=0;targetCameraY=0;shake=0;blocks=[];
- blocks.push({x:W/2-70,y:FLOOR-BLOCK_H,w:140,h:BLOCK_H,colour:"#fff",angle:0,vy:0,falling:false});
- spawn();updateUI();
+ state="playing";score=0;level=1;camera=0;shake=0;tilt=0;blocks=[];
+ // Fixed world floor.
+ blocks.push({x:W/2-70,y:FLOOR-BH,w:140,h:BH,color:"#fff",angle:0,vx:0,vy:0});
+ spawn();ui();
 }
 function spawn(){
- const w=Math.max(62,125-(level-1)*5);
- current={x:30,y:80,w,h:BLOCK_H,colour:colours[(blocks.length+level)%colours.length],
- angle:0,vy:0,falling:false};
- dir=Math.random()<.5?1:-1;
+ const w=Math.max(58,118-(level-1)*3.2);
+ // New block starts ABOVE THE VISIBLE WORLD.
+ current={x:25,y:70,w:w,h:BH,color:colors[(blocks.length+level)%colors.length],
+          angle:0,vx:0,vy:0,falling:false};
+ dir=Math.random()<.5?-1:1;
 }
-function updateUI(){scoreEl.textContent=`Score: ${score} • Level ${level}`}
-const scoreEl=document.getElementById("score"),statusEl=document.getElementById("status");
-
+function ui(){scoreEl.textContent=`Score: ${score} • Level ${level} • Blocks: ${blocks.length}`}
 function drawBlock(b){
- const sy=b.y+cameraY;
- ctx.save();ctx.translate(b.x+b.w/2,sy+b.h/2);ctx.rotate(b.angle);
- ctx.fillStyle=b.colour;ctx.beginPath();ctx.roundRect(-b.w/2,-b.h/2,b.w,b.h,7);ctx.fill();
- ctx.fillStyle="rgba(255,255,255,.3)";ctx.fillRect(-b.w/2+7,-b.h/2+5,b.w-14,6);ctx.restore();
+ const sy=b.y+camera;
+ ctx.save();ctx.translate(b.x+b.w/2,sy+b.h/2);ctx.rotate(b.angle||0);
+ ctx.fillStyle=b.color;ctx.beginPath();ctx.roundRect(-b.w/2,-b.h/2,b.w,b.h,5);ctx.fill();
+ ctx.fillStyle="rgba(255,255,255,.25)";ctx.fillRect(-b.w/2+6,-b.h/2+4,b.w-12,5);
+ ctx.restore();
 }
 function draw(){
  ctx.clearRect(0,0,W,H);
- const g=ctx.createLinearGradient(0,0,0,H);g.addColorStop(0,"#3b2b72");g.addColorStop(1,"#17132a");ctx.fillStyle=g;ctx.fillRect(0,0,W,H);
+ const g=ctx.createLinearGradient(0,0,0,H);g.addColorStop(0,"#3b2b72");g.addColorStop(1,"#151226");
+ ctx.fillStyle=g;ctx.fillRect(0,0,W,H);
  ctx.fillStyle="#f4f1ff";ctx.font="bold 18px Arial";ctx.textAlign="center";ctx.fillText("STACK",W/2,38);
  ctx.save();ctx.translate(shake?(Math.random()-.5)*shake:0,0);
- ctx.fillStyle="#4b4268";ctx.fillRect(25,FLOOR+cameraY,W-50,10);
+ // The floor is not part of the camera. It is a visual reference only.
+ // The tower is shifted so the newest block stays in the play area.
  for(const b of blocks)drawBlock(b);
  if(current)drawBlock(current);
  ctx.restore();
- if(state==="gameover"){ctx.fillStyle="rgba(0,0,0,.58)";ctx.fillRect(0,0,W,H);ctx.fillStyle="#fff";ctx.font="bold 40px Arial";ctx.fillText("STACK OVER!",W/2,250);ctx.font="bold 28px Arial";ctx.fillText("Score "+score,W/2,300);ctx.font="18px Arial";ctx.fillText("Tap PLAY to try again",W/2,340)}
+
+ if(state==="gameover"){
+  ctx.fillStyle="rgba(0,0,0,.6)";ctx.fillRect(0,0,W,H);
+  ctx.fillStyle="#fff";ctx.font="bold 40px Arial";ctx.fillText("TOWER FALLEN",W/2,245);
+  ctx.font="bold 28px Arial";ctx.fillText("Score "+score,W/2,295);
+  ctx.font="18px Arial";ctx.fillText("Tap PLAY to try again",W/2,335);
+ }
  requestAnimationFrame(draw);
 }
-
 function overlap(a,b){return Math.max(0,Math.min(a.x+a.w,b.x+b.w)-Math.max(a.x,b.x))}
-function supportTilt(block,below){
- // The block itself stays FLAT. Lean is represented by movement of the tower,
- // not by rotating the newly placed block.
- const delta=(block.x+block.w/2)-(below.x+below.w/2);
- return delta/(below.w/2);
-}
+function centre(b){return b.x+b.w/2}
 function drop(){
- if(state!=="playing"||current.falling)return;
- current.falling=true;
- statusEl.textContent="DROP!";
+ if(state!=="playing"||!current||current.falling)return;
+ current.falling=true;statusEl.textContent="DROP!";
 }
 function physics(){
- if(state==="playing"&&current){
-   if(!current.falling){
-     const speed=2.6+(level-1)*.34;
-     current.x+=speed*dir;
-     if(current.x<=25){current.x=25;dir=1}
-     if(current.x+current.w>=W-25){current.x=W-25-current.w;dir=-1}
-   }else{
-     const below=blocks[blocks.length-1];
-     current.vy+=0.55;
-     current.y+=current.vy;
+ if(state==="playing"&&current&&!current.falling){
+   const speed=2.8+(level-1)*.11;
+   current.x+=speed*dir;
+   if(current.x<=18){current.x=18;dir=1}
+   if(current.x+current.w>=W-18){current.x=W-18-current.w;dir=-1}
+ }
+ if(state==="playing"&&current&&current.falling){
+   const below=blocks[blocks.length-1];
+   current.vy+=0.52;
+   current.y+=current.vy;
 
-     // Find the height where the falling block lands.
-     const landingY=below.y-BLOCK_H;
+   // Land exactly on top of the previous block.
+   const landing=below.y-BH;
+   if(current.y>=landing){
+     current.y=landing;
+     const o=overlap(current,below);
 
-     if(current.y>=landingY){
-       current.y=landingY;
-       const o=overlap(current,below);
-       if(o<18){
-         state="gameover";shake=9;current.falling=false;statusEl.textContent="THE TOWER FELL!";
-       }else{
-         // Block lands FLAT. Its position is preserved, so overhang remains.
-         current.angle=0;
-         blocks.push({...current,falling:false,vy:0});
-         score+=Math.max(1,Math.round(o/9));
-         if(score>=level*35)level=Math.min(15,level+1);
-         current=null;
+     if(o<15){
+       state="gameover";shake=14;statusEl.textContent="TOWER FALLEN!";
+     }else{
+       // Keep block horizontal. The offset is retained.
+       current.angle=0;
+       blocks.push({...current,falling:false,vy:0});
+       const quality=o/Math.min(current.w,below.w);
+       score+=Math.max(1,Math.round(quality*10));
+       if(blocks.length%12===0)level=Math.min(20,level+1);
 
-         // As the tower grows, move the whole WORLD down on the screen.
-         // The floor therefore moves down, not the stack up.
-         const top=blocks[blocks.length-1].y;
-         targetCameraY=Math.min(0, (H*0.45)-top);
-         spawn();
-         updateUI();
-         statusEl.textContent="GOOD! Tap to drop the next block";
-       }
+       current=null;
+       spawn();
+       statusEl.textContent="GOOD! Tap to drop";
+
+       // Camera logic:
+       // Keep the newest placed block around 68% down the screen.
+       // This means the tower grows downward visually while the camera
+       // smoothly follows it, and new blocks remain visible at the top.
+       const desired=H*0.68-(blocks[blocks.length-1].y);
+       camera += (desired-camera)*0.35;
+
+       ui();
      }
    }
  }
 
- // Smoothly shift the whole scene downward as the tower approaches the top.
- cameraY+=(targetCameraY-cameraY)*0.08;
+ // Once the tower is tall, continuously follow the top rather than waiting
+ // for the bottom to reach the edge.
+ if(blocks.length>2){
+   const topY=blocks[blocks.length-1].y+camera;
+   const target=H*0.68-topY;
+   camera += (target-camera)*0.035;
+ }
 
- // Physical balance: blocks remain flat, but the tower's centre of mass
- // determines whether it is stable. More overhang = more wobble.
- if(blocks.length>1&&state==="playing"){
+ // Jenga-style stability:
+ // Every block stays flat, but the tower's centre of mass creates wobble.
+ if(blocks.length>2&&state==="playing"){
    let total=0,weighted=0;
-   for(const b of blocks){const centre=b.x+b.w/2;weighted+=centre*b.w;total+=b.w}
-   const centre=weighted/Math.max(1,total);
+   for(const b of blocks){
+     const mass=b.w;
+     weighted+=centre(b)*mass;
+     total+=mass;
+   }
+   const com=weighted/total;
    const base=blocks[0];
-   const baseCentre=base.x+base.w/2;
-   const imbalance=(centre-baseCentre)/(base.w/2);
-   const wob=Math.max(0,Math.min(1,Math.abs(imbalance)));
-   shake=Math.max(shake*.94,wob*wob*5);
-   if(Math.abs(imbalance)>1.25){state="gameover";statusEl.textContent="⚠️ TOO UNBALANCED!";shake=12}
- }else shake*=.92;
+   const imbalance=(com-centre(base))/(base.w/2);
+   const danger=Math.min(1,Math.abs(imbalance));
+
+   // Smooth physical-looking sway. The whole tower moves slightly.
+   const targetTilt=Math.max(-0.075,Math.min(0.075,imbalance*0.055));
+   tilt += (targetTilt-tilt)*0.035;
+   shake=Math.max(shake*.92,danger*danger*4.5);
+
+   // Harder failure: significant COM shift causes a genuine fall.
+   if(Math.abs(imbalance)>1.08){
+     state="gameover";shake=18;statusEl.textContent="💥 TOWER COLLAPSED!";
+   }
+ }else{
+   shake*=.94;tilt*=.96;
+ }
 
  requestAnimationFrame(physics);
 }
