@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
-<title>Stack It</title>
+<title>Stack It 0.2</title>
 <style>
 *{box-sizing:border-box}
 body{margin:0;background:#17132a;color:#fff;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;display:flex;justify-content:center;min-height:100vh}
@@ -14,83 +14,142 @@ button{font-size:22px;font-weight:800;border:0;border-radius:16px;padding:14px 3
 #score{font-size:18px;color:#ddd}
 </style>
 </head>
-<body>
-<main>
+<body><main>
 <h1>🧱 STACK IT</h1>
-<p class="sub">Tap to drop the block</p>
+<p class="sub">Tap to drop • Balance the tower</p>
 <canvas id="game" width="484" height="650"></canvas>
 <div id="status">READY?</div>
-<div id="score">Score: 0</div>
+<div id="score">Score: 0 • Level 1</div>
 <button id="play">PLAY</button>
 </main>
 <script>
 const c=document.getElementById("game"),ctx=c.getContext("2d"),W=c.width,H=c.height;
 const colours=["#ff4d6d","#ffb703","#00d4ff","#7cff6b","#b66cff","#ff7a00"];
-let state="menu",score=0,level=1,blocks=[],current=null,dir=1,last=0,baseSpeed=2.8;
 const floorY=585;
+let state="menu",score=0,level=1,blocks=[],current=null,dir=1;
+let cameraY=0,targetCameraY=0,fallTimer=0,shake=0;
 
-function rnd(n){return Math.floor(Math.random()*n)}
 function newBlock(){
- const width=Math.max(62,125-(level-1)*6);
- current={x:45,y:100,w:width,h:34,vy:0,colour:colours[(blocks.length+level)%colours.length]};
- dir=1;
+ const width=Math.max(62,125-(level-1)*5);
+ current={x:45,y:110,w:width,h:32,colour:colours[(blocks.length+level)%colours.length],
+   vx:0,angle:0,angVel:0,vy:0};
+ dir=Math.random()<.5?1:-1;
 }
 function start(){
- state="playing";score=0;level=1;blocks=[];
- blocks.push({x:W/2-70,y:floorY-28,w:140,h:28,colour:"#ffffff"});
+ state="playing";score=0;level=1;blocks=[];cameraY=0;targetCameraY=0;shake=0;
+ blocks.push({x:W/2-70,y:floorY-28,w:140,h:28,colour:"#ffffff",angle:0});
  newBlock();updateUI();
 }
-function updateUI(){document.getElementById("score").textContent="Score: "+score+"  •  Level "+level}
+function updateUI(){document.getElementById("score").textContent=`Score: ${score} • Level ${level}`}
+function drawBlock(b,screenY){
+ ctx.save();ctx.translate(b.x+b.w/2,screenY+b.h/2);ctx.rotate(b.angle||0);
+ ctx.fillStyle=b.colour;ctx.beginPath();ctx.roundRect(-b.w/2,-b.h/2,b.w,b.h,8);ctx.fill();
+ ctx.fillStyle="rgba(255,255,255,.28)";ctx.fillRect(-b.w/2+7,-b.h/2+5,b.w-14,6);
+ ctx.restore();
+}
 function draw(){
  ctx.clearRect(0,0,W,H);
  const g=ctx.createLinearGradient(0,0,0,H);g.addColorStop(0,"#3b2b72");g.addColorStop(1,"#17132a");ctx.fillStyle=g;ctx.fillRect(0,0,W,H);
- ctx.fillStyle="#f4f1ff";ctx.font="bold 18px sans-serif";ctx.textAlign="center";ctx.fillText("STACK",W/2,45);
- ctx.fillStyle="#4b4268";ctx.fillRect(25,floorY,W-50,10);
- for(const b of blocks){drawBlock(b)}
- if(current&&state==="playing")drawBlock(current);
+ const worldTop=0;
+ ctx.fillStyle="#f4f1ff";ctx.font="bold 18px sans-serif";ctx.textAlign="center";ctx.fillText("STACK",W/2,38);
+
+ ctx.save();
+ const sx=shake?(Math.random()-.5)*shake:0;
+ ctx.translate(sx,0);
+
+ // Visible floor stays fixed; the world/tower moves down as it grows.
+ const offset=cameraY;
+ ctx.fillStyle="#4b4268";ctx.fillRect(25,floorY, W-50,10);
+
+ for(const b of blocks) drawBlock(b,b.y+offset);
+ if(current&&state==="playing") drawBlock(current,current.y+offset);
+
+ ctx.restore();
+
  if(state==="gameover"){
-   ctx.fillStyle="rgba(0,0,0,.55)";ctx.fillRect(0,0,W,H);
-   ctx.fillStyle="#fff";ctx.font="bold 40px sans-serif";ctx.fillText("STACK OVER!",W/2,260);
-   ctx.font="bold 28px sans-serif";ctx.fillText("Score "+score,W/2,310);
-   ctx.font="18px sans-serif";ctx.fillText("Tap PLAY to try again",W/2,350);
+   ctx.fillStyle="rgba(0,0,0,.58)";ctx.fillRect(0,0,W,H);
+   ctx.fillStyle="#fff";ctx.font="bold 40px sans-serif";ctx.fillText("STACK OVER!",W/2,250);
+   ctx.font="bold 28px sans-serif";ctx.fillText("Score "+score,W/2,300);
+   ctx.font="18px sans-serif";ctx.fillText("Tap PLAY to try again",W/2,340);
  }
  requestAnimationFrame(draw);
 }
-function drawBlock(b){
- ctx.save();
- ctx.fillStyle=b.colour;
- ctx.beginPath();
- ctx.roundRect(b.x,b.y,b.w,b.h,8);ctx.fill();
- ctx.fillStyle="rgba(255,255,255,.25)";
- ctx.fillRect(b.x+7,b.y+6,b.w-14,6);
- ctx.restore();
+function horizontalOverlap(a,b){
+ return Math.max(0,Math.min(a.x+a.w,b.x+b.w)-Math.max(a.x,b.x));
 }
-function overlap(a,b){return Math.max(0,Math.min(a.x+a.w,b.x+b.w)-Math.max(a.x,b.x))}
+function supportAngle(below,above){
+ const centreBelow=below.x+below.w/2;
+ const centreAbove=above.x+above.w/2;
+ const offset=(centreAbove-centreBelow)/(below.w/2);
+ return Math.max(-0.65,Math.min(0.65,offset*.38));
+}
 function drop(){
  if(state!=="playing"||!current)return;
  const below=blocks[blocks.length-1];
- const o=overlap(current,below);
- if(o<20){state="gameover";current=null;return}
- current.x=Math.max(current.x,below.x);
- current.x=Math.min(current.x,below.x+below.w-o);
+ const overlap=horizontalOverlap(current,below);
+
+ // If there is almost no support, it falls.
+ if(overlap<18){
+   state="gameover";fallTimer=0;shake=7;
+   return;
+ }
+
+ // Keep the actual overlap, rather than snapping perfectly into place.
+ current.x=Math.max(below.x-current.w+8,Math.min(current.x,below.x+below.w-8));
  current.y=below.y-current.h;
+
+ // Real-ish counterbalance: a block that is off-centre begins tilted.
+ current.angle=supportAngle(below,current);
+ current.angVel=0;
  blocks.push({...current});
- score+=Math.max(1,Math.round(o/10));
- if(score>0&&score%50<5)level=Math.min(12,level+1);
- newBlock();updateUI();
+
+ score+=Math.max(1,Math.round(overlap/9));
+
+ // Increase difficulty gradually.
+ if(score>=level*35){level=Math.min(15,level+1)}
+
+ // Camera follows the tower. Once it gets high, the tower is visually
+ // pushed down while the floor remains visible.
+ targetCameraY=Math.min(0, 420-(blocks.length*36));
+ newBlock();
+ updateUI();
 }
-function tick(){
+function physics(){
  if(state==="playing"&&current){
-   const speed=baseSpeed+(level-1)*0.45;
+   const speed=2.6+(level-1)*.34;
    current.x+=speed*dir;
    if(current.x<=25){current.x=25;dir=1}
    if(current.x+current.w>=W-25){current.x=W-25-current.w;dir=-1}
  }
- requestAnimationFrame(tick);
+
+ // Smooth camera movement.
+ cameraY+=(targetCameraY-cameraY)*.08;
+
+ // Wobble the entire tower slightly according to how far each block
+ // is offset from the support below.
+ if(state==="playing"||state==="gameover"){
+   let wobble=0;
+   for(let i=1;i<blocks.length;i++){
+     const a=blocks[i],b=blocks[i-1];
+     const centreA=a.x+a.w/2,centreB=b.x+b.w/2;
+     wobble+=(centreA-centreB)/Math.max(1,b.w)*.018;
+   }
+   wobble=Math.max(-0.045,Math.min(0.045,wobble));
+   for(let i=1;i<blocks.length;i++){
+     // settle each block gently toward the lean created by its support.
+     const b=blocks[i],below=blocks[i-1];
+     const desired=supportAngle(below,b);
+     b.angVel+=(desired-b.angle)*.018;
+     b.angVel*=.94;
+     b.angle+=b.angVel;
+   }
+   if(Math.abs(wobble)>.025) shake=Math.min(2.5,Math.abs(wobble)*50);
+   else shake*=.9;
+ }
+ requestAnimationFrame(physics);
 }
-c.addEventListener("pointerdown",drop);
 document.getElementById("play").onclick=start;
-draw();tick();
+c.addEventListener("pointerdown",drop);
+draw();physics();
 </script>
-</body>
-</html>
+</body></html>
