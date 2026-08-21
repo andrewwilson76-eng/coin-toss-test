@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
-<title>Stack It 0.8</title>
+<title>Stack It 0.9</title>
 <style>
 *{box-sizing:border-box}body{margin:0;background:#12101e;color:#fff;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;display:flex;justify-content:center;min-height:100vh}
 main{width:min(100vw,520px);padding:14px;text-align:center}h1{font-size:38px;margin:4px 0}.sub{color:#bbb;margin:0 0 10px}
@@ -31,7 +31,7 @@ function start(){
 function spawn(){
  const w=Math.max(43.5,88.5-Math.min(41.25,blocks.length*.675));
  // Spawn in world space so it always appears at the same place on screen.
- current={x:25,y:64-camera,w,h:BH,color:colors[(blocks.length)%colors.length],
+ current={x:25,y:72-camera,w,h:BH,color:colors[(blocks.length)%colors.length],
           angle:0,vy:0,falling:false};
  dir=Math.random()<.5?-1:1;
 }
@@ -84,7 +84,7 @@ function draw(){
    // Limit the connected tower to a realistic lean and keep it inside the walls.
    const leftLimit=Math.max(0,(minX-WALL-4)/towerHeight);
    const rightLimit=Math.max(0,(W-WALL-4-maxX)/towerHeight);
-   const visualLean=Math.max(-Math.min(.04,leftLimit),Math.min(Math.min(.04,rightLimit),worldLean));
+   const visualLean=Math.max(-Math.min(.026,leftLimit),Math.min(Math.min(.026,rightLimit),worldLean));
    ctx.translate(pivotX,pivotY);ctx.rotate(visualLean);ctx.translate(-pivotX,-pivotY);
    for(const b of blocks)drawBlock(b);
  }else{
@@ -177,12 +177,14 @@ function physics(){
 
    // Damped rotational dynamics: torque changes sway velocity;
    // damping represents friction/contact between blocks.
-   worldLeanV += torque*0.00062;
-   worldLeanV *= 0.978;
+   // Gentle, well-damped movement for short towers; taller towers react more.
+   const earlyForgiveness=Math.min(1,Math.max(.28,(blocks.length-1)/12));
+   worldLeanV += torque*0.00031*earlyForgiveness;
+   worldLeanV *= 0.965;
    worldLean += worldLeanV;
 
    // Small natural movement even when almost balanced.
-   const natural=Math.sin(performance.now()/430)*0.000075*heightFactor;
+   const natural=Math.sin(performance.now()/500)*0.000025*heightFactor*earlyForgiveness;
    worldLeanV+=natural;
 
    // Visual shake increases rapidly near the stability edge.
@@ -191,12 +193,13 @@ function physics(){
 
    // Collapse threshold: centre of mass has moved beyond the support region.
    // We allow a small amount of dynamic movement before failure.
-   if(Math.abs(comOffset)>0.78||Math.abs(worldLean)>.045){
+   const collapseLimit=blocks.length < 10 ? 1.08 : blocks.length < 25 ? .98 : .88;
+   if(Math.abs(comOffset)>collapseLimit||Math.abs(worldLean)>.065){
      collapse("💥 GRAVITY WINS!");
    }
 
    // Very high towers become less forgiving.
-   if(blocks.length>45 && Math.abs(comOffset)>0.60){
+   if(blocks.length>45 && Math.abs(comOffset)>0.72){
      collapse("💥 TOO UNSTABLE!");
    }
  }else{
@@ -228,19 +231,13 @@ function physics(){
  }
 
  // ---- CAMERA ----
- // Keep the NEXT incoming block in the upper part of the screen.
- // The camera is based on the newest block, not the bottom of the tower.
- // As the tower grows, the world moves DOWN to create more falling room.
+ // Keep the base on the floor at the start. Only scroll once the tower top
+ // reaches the upper play zone, then move the world down smoothly.
  if(state==="playing"){
-   const newestY=(blocks[blocks.length-1]?.y ?? FLOOR-BH)+camera;
-   const desiredNewest=H*0.70;
-   const targetCamera=desiredNewest-(blocks[blocks.length-1]?.y ?? FLOOR-BH);
+   const newestWorldY=blocks[blocks.length-1]?.y ?? FLOOR-BH;
+   const desiredNewest=H*.52;
+   const targetCamera=Math.max(0,desiredNewest-newestWorldY);
    camera += (targetCamera-camera)*0.10;
-
-   // Ensure current falling block never starts/gets hidden at the top.
-   if(current && current.y+camera<70){
-     camera += (70-(current.y+camera))*0.08;
-   }
  }
 
  requestAnimationFrame(physics);
