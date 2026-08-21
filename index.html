@@ -2,188 +2,95 @@
 <html lang="en">
 <head>
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
-<title>Coin Toss 0.8</title>
+<title>Stack It</title>
 <style>
-body{margin:0;background:#111;color:#fff;font-family:Arial,sans-serif;text-align:center}
-main{max-width:520px;margin:auto;padding:14px}
-h1{margin:3px;font-size:34px}.sub{color:#aaa;margin:4px 0 10px}
-canvas{width:100%;background:#222;border-radius:18px}
-button{font-size:21px;font-weight:bold;padding:14px 25px;border:0;border-radius:15px;margin:10px 4px}
-#status{font-size:22px;font-weight:bold;min-height:30px}
-#sensor{font-size:13px;color:#aaa;line-height:1.45}
+*{box-sizing:border-box}
+body{margin:0;background:#17132a;color:#fff;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;display:flex;justify-content:center;min-height:100vh}
+main{width:min(100vw,520px);padding:14px;text-align:center}
+h1{font-size:38px;margin:4px 0}.sub{color:#bbb;margin:0 0 10px}
+canvas{width:100%;height:auto;border-radius:22px;display:block;background:#272044;touch-action:manipulation}
+button{font-size:22px;font-weight:800;border:0;border-radius:16px;padding:14px 30px;margin:12px 0;background:#fff;color:#17132a}
+#status{font-size:23px;font-weight:800;min-height:30px}
+#score{font-size:18px;color:#ddd}
 </style>
 </head>
-<body><main>
-<h1>🪙 COIN TOSS</h1>
-<p class="sub">Prototype 0.8 — forward flick</p>
+<body>
+<main>
+<h1>🧱 STACK IT</h1>
+<p class="sub">Tap to drop the block</p>
 <canvas id="game" width="484" height="650"></canvas>
-<div id="status">Press READY</div>
-<button id="ready">READY</button>
-<button id="again" style="display:none">THROW AGAIN</button>
-<div id="sensor">Ready.</div>
+<div id="status">READY?</div>
+<div id="score">Score: 0</div>
+<button id="play">PLAY</button>
 </main>
-
 <script>
-const canvas=document.getElementById("game"),ctx=canvas.getContext("2d");
-const W=canvas.width,H=canvas.height;
-let coin={x:W/2,y:H-82,vx:0,vy:0,a:0},state="idle";
-let armedAt=0,lastSample=0,baseX=0,baseY=0,baseZ=0;
-let baselineReady=false,forwardPeak=0,forwardSamples=0;
-let lastForward=0;
+const c=document.getElementById("game"),ctx=c.getContext("2d"),W=c.width,H=c.height;
+const colours=["#ff4d6d","#ffb703","#00d4ff","#7cff6b","#b66cff","#ff7a00"];
+let state="menu",score=0,level=1,blocks=[],current=null,dir=1,last=0,baseSpeed=2.8;
+const floorY=585;
 
+function rnd(n){return Math.floor(Math.random()*n)}
+function newBlock(){
+ const width=Math.max(62,125-(level-1)*6);
+ current={x:45,y:100,w:width,h:34,vy:0,colour:colours[(blocks.length+level)%colours.length]};
+ dir=1;
+}
+function start(){
+ state="playing";score=0;level=1;blocks=[];
+ blocks.push({x:W/2-70,y:floorY-28,w:140,h:28,colour:"#ffffff"});
+ newBlock();updateUI();
+}
+function updateUI(){document.getElementById("score").textContent="Score: "+score+"  •  Level "+level}
 function draw(){
  ctx.clearRect(0,0,W,H);
- ctx.fillStyle="#333";ctx.fillRect(18,18,W-36,H-36);
- ctx.fillStyle="#777";ctx.fillRect(18,42,W-36,18);
- ctx.fillStyle="#ddd";ctx.font="bold 16px Arial";ctx.textAlign="center";ctx.fillText("WALL",W/2,33);
- ctx.strokeStyle="#666";ctx.setLineDash([6,8]);ctx.beginPath();ctx.moveTo(W/2,60);ctx.lineTo(W/2,H-48);ctx.stroke();ctx.setLineDash([]);
-
- ctx.save();ctx.translate(coin.x,coin.y);ctx.rotate(coin.a);
- ctx.beginPath();ctx.arc(0,0,23,0,Math.PI*2);
- ctx.fillStyle="#c9a227";ctx.fill();ctx.lineWidth=4;ctx.strokeStyle="#f2d36b";ctx.stroke();
- ctx.fillStyle="#6f5510";ctx.font="bold 21px serif";ctx.textBaseline="middle";ctx.fillText("10p",0,0);
- ctx.restore();
+ const g=ctx.createLinearGradient(0,0,0,H);g.addColorStop(0,"#3b2b72");g.addColorStop(1,"#17132a");ctx.fillStyle=g;ctx.fillRect(0,0,W,H);
+ ctx.fillStyle="#f4f1ff";ctx.font="bold 18px sans-serif";ctx.textAlign="center";ctx.fillText("STACK",W/2,45);
+ ctx.fillStyle="#4b4268";ctx.fillRect(25,floorY,W-50,10);
+ for(const b of blocks){drawBlock(b)}
+ if(current&&state==="playing")drawBlock(current);
+ if(state==="gameover"){
+   ctx.fillStyle="rgba(0,0,0,.55)";ctx.fillRect(0,0,W,H);
+   ctx.fillStyle="#fff";ctx.font="bold 40px sans-serif";ctx.fillText("STACK OVER!",W/2,260);
+   ctx.font="bold 28px sans-serif";ctx.fillText("Score "+score,W/2,310);
+   ctx.font="18px sans-serif";ctx.fillText("Tap PLAY to try again",W/2,350);
+ }
  requestAnimationFrame(draw);
 }
-
-function setSensor(text){document.getElementById("sensor").innerHTML=text}
-
-function launch(power,side){
- state="flying";
- const p=Math.max(.25,Math.min(1,power));
- const speed=10+p*12;
- coin={x:W/2,y:H-82,vx:side*speed*.45,vy:-speed,a:0};
- document.getElementById("status").textContent="🪙 THROW!";
- setSensor("Forward flick detected · power "+Math.round(p*100)+"%");
+function drawBlock(b){
+ ctx.save();
+ ctx.fillStyle=b.colour;
+ ctx.beginPath();
+ ctx.roundRect(b.x,b.y,b.w,b.h,8);ctx.fill();
+ ctx.fillStyle="rgba(255,255,255,.25)";
+ ctx.fillRect(b.x+7,b.y+6,b.w-14,6);
+ ctx.restore();
 }
-
-function motion(e){
- if(state!=="armed")return;
-
- const a=e.acceleration;
- const g=e.accelerationIncludingGravity;
- let ax=0,ay=0,az=0;
- if(a && (a.x!=null||a.y!=null||a.z!=null)){
-   ax=a.x||0;ay=a.y||0;az=a.z||0;
- }else if(g){
-   ax=g.x||0;ay=g.y||0;az=g.z||0;
- }else return;
-
- const now=performance.now();
- if(now-armedAt<500){
-   if(!baselineReady){
-     baseX=ax;baseY=ay;baseZ=az;baselineReady=true;
-   }else{
-     baseX=baseX*.9+ax*.1;
-     baseY=baseY*.9+ay*.1;
-     baseZ=baseZ*.9+az*.1;
-   }
-   return;
- }
-
- const dx=ax-baseX,dy=ay-baseY,dz=az-baseZ;
- const horizontal=Math.hypot(dx,dy);
- const magnitude=Math.hypot(dx,dy,dz);
-
- /*
-  Forward flick filter:
-  We deliberately require a short sequence rather than a single movement.
-  The first movement arms the detector; the following stronger movement is
-  treated as the throw. This greatly reduces back-swing false triggers.
- */
- if(magnitude>0.45){
-   forwardSamples++;
-   forwardPeak=Math.max(forwardPeak,magnitude);
-
-   // Require two nearby motion samples and a stronger second movement.
-   if(forwardSamples>=2 && now-lastForward>650){
-     // Prefer movement in the phone's screen plane.
-     let side=dx/4;
-     side=Math.max(-1,Math.min(1,side));
-
-     // If the phone's main movement is on the other screen axis,
-     // still produce a controlled direction rather than zero.
-     if(Math.abs(side)<.18) side=dx>=0?.22:-.22;
-
-     const power=Math.max(.25,Math.min(1,forwardPeak/5));
-     lastForward=now;
-     launch(power,side);
-   }
- }else{
-   // A quiet sample resets the short gesture.
-   forwardSamples=0;
-   forwardPeak=0;
- }
+function overlap(a,b){return Math.max(0,Math.min(a.x+a.w,b.x+b.w)-Math.max(a.x,b.x))}
+function drop(){
+ if(state!=="playing"||!current)return;
+ const below=blocks[blocks.length-1];
+ const o=overlap(current,below);
+ if(o<20){state="gameover";current=null;return}
+ current.x=Math.max(current.x,below.x);
+ current.x=Math.min(current.x,below.x+below.w-o);
+ current.y=below.y-current.h;
+ blocks.push({...current});
+ score+=Math.max(1,Math.round(o/10));
+ if(score>0&&score%50<5)level=Math.min(12,level+1);
+ newBlock();updateUI();
 }
-
-function update(){
- if(state==="flying"){
-   coin.x+=coin.vx;
-   coin.y+=coin.vy;
-   coin.vy+=0.17;
-   coin.vx*=0.995;
-   coin.a+=0.075;
-
-   // Side boundaries.
-   if(coin.x<42){coin.x=42;coin.vx=Math.abs(coin.vx)*.3}
-   if(coin.x>W-42){coin.x=W-42;coin.vx=-Math.abs(coin.vx)*.3}
-
-   // THE WALL: stop the coin there. No bounce and no return journey.
-   if(coin.y-23<=60){
-     coin.y=83;
-     coin.vx*=0.15;
-     coin.vy=0;
-     state="stopped";
-     document.getElementById("status").textContent="🪙 COIN AT WALL";
-     setSensor("Throw complete · coin is staying at the wall.");
-     document.getElementById("again").style.display="inline-block";
-   }
+function tick(){
+ if(state==="playing"&&current){
+   const speed=baseSpeed+(level-1)*0.45;
+   current.x+=speed*dir;
+   if(current.x<=25){current.x=25;dir=1}
+   if(current.x+current.w>=W-25){current.x=W-25-current.w;dir=-1}
  }
- requestAnimationFrame(update);
+ requestAnimationFrame(tick);
 }
-
-document.getElementById("ready").onclick=async()=>{
- try{
-   if(typeof DeviceMotionEvent!=="undefined" &&
-      typeof DeviceMotionEvent.requestPermission==="function"){
-     const p=await DeviceMotionEvent.requestPermission();
-     if(p!=="granted")throw Error("Motion permission was not granted.");
-   }
-   state="armed";
-   armedAt=performance.now();
-   baselineReady=false;
-   forwardPeak=0;
-   forwardSamples=0;
-   lastForward=0;
-   document.getElementById("ready").style.display="none";
-   document.getElementById("status").textContent="READY — HOLD STILL";
-   setSensor("Hold still for half a second, then make ONE forward flick.");
-   setTimeout(()=>{
-     if(state==="armed"){
-       state="idle";
-       document.getElementById("ready").style.display="inline-block";
-       document.getElementById("status").textContent="No throw detected";
-       setSensor("Tap READY and try one clear forward flick.");
-     }
-   },6000);
- }catch(e){
-   document.getElementById("status").textContent="Motion access not available";
-   setSensor(e.message);
- }
-};
-
-document.getElementById("again").onclick=()=>{
- coin={x:W/2,y:H-82,vx:0,vy:0,a:0};
- state="idle";
- document.getElementById("again").style.display="none";
- document.getElementById("ready").style.display="inline-block";
- document.getElementById("status").textContent="Press READY";
- setSensor("Ready.");
-};
-
-window.addEventListener("devicemotion",motion);
-requestAnimationFrame(draw);
-requestAnimationFrame(update);
+c.addEventListener("pointerdown",drop);
+document.getElementById("play").onclick=start;
+draw();tick();
 </script>
 </body>
 </html>
