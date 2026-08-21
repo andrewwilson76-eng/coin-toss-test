@@ -2,30 +2,30 @@
 <html lang="en">
 <head>
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
-<title>Coin Toss 0.6</title>
+<title>Coin Toss 0.7</title>
 <style>
 body{margin:0;background:#111;color:#fff;font-family:Arial,sans-serif;text-align:center}
 main{max-width:520px;margin:auto;padding:14px}
 h1{margin:3px;font-size:34px}.sub{color:#aaa;margin:4px 0 10px}
-canvas{width:100%;background:#222;border-radius:18px}
+canvas{width:100%;background:#222;border-radius:18px;touch-action:none}
 button{font-size:21px;font-weight:bold;padding:14px 25px;border:0;border-radius:15px;margin:10px 4px}
 #status{font-size:22px;font-weight:bold;min-height:30px}
 #sensor{font-size:13px;color:#aaa;line-height:1.45}
 </style>
 </head>
 <body><main>
-<h1>🪙 COIN TOSS</h1><p class="sub">Prototype 0.6 — motion diagnostic</p>
+<h1>🪙 COIN TOSS</h1><p class="sub">Prototype 0.7 — real flick test</p>
 <canvas id="game" width="484" height="650"></canvas>
 <div id="status">Press READY</div>
 <button id="ready">READY</button><button id="again" style="display:none">THROW AGAIN</button>
-<div id="sensor">Sensor: not started</div>
+<div id="sensor">Motion sensor ready.</div>
 </main>
 <script>
 const canvas=document.getElementById("game"),ctx=canvas.getContext("2d");
 const W=canvas.width,H=canvas.height;
 let coin={x:W/2,y:H-82,vx:0,vy:0,a:0},state="idle";
-let armedAt=0,lastThrow=0,baseAcc=null,peak=0,eventCount=0,permissionGranted=false;
-let lastAcc=0,lastRot=0;
+let base={x:0,y:0,z:0},baseReady=false,armedAt=0,lastTrigger=0,eventCount=0;
+let trail=[];
 
 function draw(){
  ctx.clearRect(0,0,W,H);
@@ -33,6 +33,8 @@ function draw(){
  ctx.fillStyle="#777";ctx.fillRect(18,42,W-36,18);
  ctx.fillStyle="#ddd";ctx.font="bold 16px Arial";ctx.textAlign="center";ctx.fillText("WALL",W/2,33);
  ctx.strokeStyle="#666";ctx.setLineDash([6,8]);ctx.beginPath();ctx.moveTo(W/2,60);ctx.lineTo(W/2,H-48);ctx.stroke();ctx.setLineDash([]);
+
+ trail.forEach((p,i)=>{ctx.globalAlpha=(i+1)/trail.length*.35;ctx.beginPath();ctx.arc(p.x,p.y,4,0,Math.PI*2);ctx.fillStyle="#f2d36b";ctx.fill()});ctx.globalAlpha=1;
  ctx.save();ctx.translate(coin.x,coin.y);ctx.rotate(coin.a);
  ctx.beginPath();ctx.arc(0,0,23,0,Math.PI*2);ctx.fillStyle="#c9a227";ctx.fill();
  ctx.lineWidth=4;ctx.strokeStyle="#f2d36b";ctx.stroke();
@@ -40,66 +42,74 @@ function draw(){
  ctx.restore();requestAnimationFrame(draw);
 }
 
-function sensorText(acc,rot){
- sensor.innerHTML="Sensor events: "+eventCount+"<br>Acceleration: "+acc.toFixed(2)+" m/s² · Rotation: "+rot.toFixed(0)+" °/s";
-}
-
 function launch(power,side){
- if(state!=="armed")return;
  state="fly";
- const p=Math.max(0,Math.min(1,power));
- const speed=6+p*6;
- coin={x:W/2,y:H-82,vx:Math.max(-1,Math.min(1,side))*speed*.5,vy:-speed,a:0};
+ const p=Math.max(.25,Math.min(1,power));
+ // Minimum movement is deliberately obvious for this test.
+ const speed=11+p*13;
+ coin={x:W/2,y:H-82,vx:side*speed*.9,vy:-speed,a:0};
+ trail=[];
  status.textContent="🪙 THROW!";
- sensor.innerHTML+="<br><b>FLICK DETECTED</b>";
+ sensor.innerHTML="<b>FLICK DETECTED</b> · power "+Math.round(p*100)+"%";
 }
 
 function motion(e){
  eventCount++;
- let a=e.acceleration, g=e.accelerationIncludingGravity;
+ let a=e.acceleration;
+ let g=e.accelerationIncludingGravity;
  let ax=0,ay=0,az=0;
- if(a && (a.x!=null||a.y!=null||a.z!=null)){
-   ax=a.x||0;ay=a.y||0;az=a.z||0;
- }else if(g){
-   ax=g.x||0;ay=g.y||0;az=g.z||0;
- }else{
-   sensor.textContent="Sensor events: "+eventCount+" · no acceleration data";
-   return;
+ if(a && (a.x!=null||a.y!=null||a.z!=null)){ax=a.x||0;ay=a.y||0;az=a.z||0}
+ else if(g){ax=g.x||0;ay=g.y||0;az=g.z||0}
+ else return;
+
+ // Build a baseline vector from the phone while it is held still.
+ if(state==="armed" && !baseReady && performance.now()-armedAt>250){
+   base={x:ax,y:ay,z:az};baseReady=true;
  }
- let acc=Math.hypot(ax,ay,az);
+
+ let dx=ax-base.x,dy=ay-base.y,dz=az-base.z;
+ let delta=Math.hypot(dx,dy,dz);
  let rr=e.rotationRate||{};
  let rot=Math.max(Math.abs(rr.alpha||0),Math.abs(rr.beta||0),Math.abs(rr.gamma||0));
- lastAcc=acc;lastRot=rot;sensorText(acc,rot);
 
- if(state!=="armed")return;
- let now=performance.now();
- if(now-armedAt<450){
-   baseAcc=baseAcc==null?acc:baseAcc*.9+acc*.1;
-   return;
- }
- let delta=Math.abs(acc-(baseAcc||9.8));
- peak=Math.max(peak,delta);
+ sensor.innerHTML="Sensor events: "+eventCount+"<br>Motion "+delta.toFixed(2)+" · Rotation "+rot.toFixed(0)+"°/s";
 
- // Use either a clear acceleration change OR a clear rotational flick.
- // This is deliberately forgiving while we diagnose the iPhone sensor.
- if(now-lastThrow>700 && (delta>0.9 || rot>30)){
-   lastThrow=now;
-   let power=Math.max(0,Math.min(1,Math.max(delta/6,rot/180)));
-   let side=Math.max(-1,Math.min(1,ax/8));
-   launch(power,side);
+ if(state==="armed" && baseReady && performance.now()-armedAt>450 && performance.now()-lastTrigger>900){
+   // Much easier to trigger than v06.
+   if(delta>0.55 || rot>15){
+     lastTrigger=performance.now();
+     // Horizontal direction: use the strongest horizontal change.
+     let side=0;
+     if(Math.abs(dx)>Math.abs(dy)) side=Math.max(-1,Math.min(1,dx/4));
+     else side=Math.max(-1,Math.min(1,dy/4));
+     if(Math.abs(side)<.18) side=(dx>=0?1:-1)*.35;
+     let power=Math.max(.25,Math.min(1,Math.max(delta/5,rot/120)));
+     launch(power,side);
+   }
  }
 }
 
 function update(){
  if(state==="fly"){
-   coin.x+=coin.vx;coin.y+=coin.vy;coin.vy+=.13;coin.vx*=.996;coin.a+=.035;
-   if(coin.x<42){coin.x=42;coin.vx=Math.abs(coin.vx)*.35}
-   if(coin.x>W-42){coin.x=W-42;coin.vx=-Math.abs(coin.vx)*.35}
-   if(coin.y-23<=60){coin.y=83;coin.vy=Math.abs(coin.vy)*.12;coin.vx*=.45}
-   if(coin.y>=H-82){coin.y=H-82;coin.vy*=.1;coin.vx*=.88;
-     if(Math.abs(coin.vy)<.25){
-       state="done";status.textContent="THROW COMPLETE";
-       sensor.innerHTML="Stopped at "+Math.round(coin.x)+" · "+Math.round(Math.abs(coin.x-W/2))+" from centre";
+   trail.push({x:coin.x,y:coin.y});if(trail.length>12)trail.shift();
+   coin.x+=coin.vx;coin.y+=coin.vy;coin.vy+=.18;coin.vx*=.994;coin.a+=.07;
+
+   if(coin.x<42){coin.x=42;coin.vx=Math.abs(coin.vx)*.42}
+   if(coin.x>W-42){coin.x=W-42;coin.vx=-Math.abs(coin.vx)*.42}
+
+   if(coin.y-23<=60){
+     coin.y=83;
+     coin.vy=Math.abs(coin.vy)*.22;
+     coin.vx*=.72;
+     status.textContent="💥 WALL HIT!";
+   }
+
+   if(coin.y>=H-82){
+     coin.y=H-82;coin.vy*=.08;coin.vx*=.9;
+     if(Math.abs(coin.vy)<.3){
+       state="done";
+       status.textContent="THROW COMPLETE";
+       sensor.innerHTML="Coin stopped at "+Math.round(coin.x)+" · distance from centre "+Math.round(Math.abs(coin.x-W/2));
        again.style.display="inline-block";
      }
    }
@@ -113,15 +123,26 @@ ready.onclick=async()=>{
      const p=await DeviceMotionEvent.requestPermission();
      if(p!=="granted")throw Error("Motion permission was not granted.");
    }
-   permissionGranted=true;state="armed";armedAt=performance.now();baseAcc=null;peak=0;lastThrow=0;
+   state="armed";armedAt=performance.now();baseReady=false;lastTrigger=0;
    ready.style.display="none";status.textContent="READY — HOLD STILL";
-   sensor.textContent="Listening for iPhone motion… hold still for half a second, then flick.";
-   setTimeout(()=>{if(state==="armed"){state="idle";ready.style.display="inline-block";status.textContent="No flick detected";sensor.innerHTML="Sensor events: "+eventCount+"<br>Try READY again. If events stay at 0, the browser is not receiving motion data."}},5000);
+   sensor.textContent="Hold still briefly, then make one firm flick.";
+   setTimeout(()=>{
+     if(state==="armed"){
+       state="idle";ready.style.display="inline-block";
+       status.textContent="No flick detected";
+       sensor.innerHTML="Sensor events received: "+eventCount+"<br>Try again with a firmer flick.";
+     }
+   },6000);
  }catch(e){status.textContent="Motion access not available";sensor.textContent=e.message}
 };
 
-again.onclick=()=>{coin={x:W/2,y:H-82,vx:0,vy:0,a:0};state="idle";again.style.display="none";ready.style.display="inline-block";status.textContent="Press READY";sensor.textContent="Ready."};
+again.onclick=()=>{
+ coin={x:W/2,y:H-82,vx:0,vy:0,a:0};state="idle";trail=[];
+ again.style.display="none";ready.style.display="inline-block";
+ status.textContent="Press READY";sensor.textContent="Ready.";
+};
 
 addEventListener("devicemotion",motion);
 draw();update();
-</script></body></html>
+</script>
+</body></html>
