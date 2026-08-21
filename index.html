@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
-<title>Stack It 0.6</title>
+<title>Stack It 0.7</title>
 <style>
 *{box-sizing:border-box}body{margin:0;background:#12101e;color:#fff;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;display:flex;justify-content:center;min-height:100vh}
 main{width:min(100vw,520px);padding:14px;text-align:center}h1{font-size:38px;margin:4px 0}.sub{color:#bbb;margin:0 0 10px}
@@ -25,11 +25,11 @@ const statusEl=document.getElementById("status"),scoreEl=document.getElementById
 
 function start(){
  state="playing";score=0;blocks=[];camera=0;shake=0;worldLean=0;worldLeanV=0;
- blocks.push({x:W/2-70,y:FLOOR-BH,w:140,h:BH,color:"#fff",angle:0,vx:0,vy:0,falling:false});
+ blocks.push({x:W/2-52.5,y:FLOOR-BH,w:105,h:BH,color:"#fff",angle:0,vx:0,vy:0,falling:false});
  spawn();ui();
 }
 function spawn(){
- const w=Math.max(58,118-Math.min(55,blocks.length*.9));
+ const w=Math.max(43.5,88.5-Math.min(41.25,blocks.length*.675));
  // Spawn in world space so it always appears at the same place on screen.
  current={x:25,y:64-camera,w,h:BH,color:colors[(blocks.length)%colors.length],
           angle:0,vy:0,falling:false};
@@ -41,8 +41,13 @@ function centre(b){return b.x+b.w/2}
 
 function drawBlock(b){
  const sy=b.y+camera;
- const height=Math.max(0,FLOOR-b.y),sway=state==="playing"?worldLean*height*.52:0;
- ctx.save();ctx.translate(b.x+b.w/2+sway,sy+b.h/2);ctx.rotate(b.angle+(state==="playing"?worldLean*height/560:0));
+ // The loose block remains independent and level while moving AND falling.
+ // It joins the tower physics only after it has landed and entered blocks[].
+ const isIncoming=b===current;
+ const height=Math.max(0,FLOOR-b.y),sway=state==="playing"&&!isIncoming?worldLean*height*.52:0;
+ ctx.save();ctx.translate(b.x+b.w/2+sway,sy+b.h/2);
+ // Only the stacked tower sways. The incoming block always stays level.
+ ctx.rotate(isIncoming?0:b.angle+(state==="playing"?worldLean*height/560:0));
  ctx.fillStyle=b.color;ctx.beginPath();ctx.roundRect(-b.w/2,-b.h/2,b.w,b.h,5);ctx.fill();
  ctx.fillStyle="rgba(255,255,255,.28)";ctx.fillRect(-b.w/2+6,-b.h/2+4,b.w-12,5);
  ctx.strokeStyle="rgba(36,20,28,.45)";ctx.lineWidth=2;ctx.strokeRect(-b.w/2+2,-b.h/2+2,b.w-4,b.h-4);
@@ -50,22 +55,25 @@ function drawBlock(b){
 }
 function draw(){
  ctx.clearRect(0,0,W,H);
- const g=ctx.createLinearGradient(0,0,0,H);g.addColorStop(0,"#39296d");g.addColorStop(1,"#12101e");
+ const g=ctx.createLinearGradient(0,0,0,H);g.addColorStop(0,"#55c8ff");g.addColorStop(.7,"#b9efff");g.addColorStop(1,"#f3fdff");
  ctx.fillStyle=g;ctx.fillRect(0,0,W,H);
- // A bright construction-yard arena with solid side walls.
- ctx.fillStyle="#fde68a";ctx.beginPath();ctx.arc(410,86,38,0,Math.PI*2);ctx.fill();
- ctx.fillStyle="rgba(17,24,39,.28)";
- for(let x=25;x<W;x+=75){ctx.beginPath();ctx.moveTo(x,205);ctx.lineTo(x+55,145);ctx.lineTo(x+110,205);ctx.fill()}
- ctx.fillStyle="#64748b";ctx.fillRect(0,510,W,140);
- ctx.fillStyle="#475569";ctx.fillRect(0,548,W,102);
- ctx.fillStyle="#263445";ctx.fillRect(0,FLOOR,W,H-FLOOR);
- ctx.fillStyle="#f8fafc";ctx.font="bold 18px Arial";ctx.textAlign="center";ctx.fillText("STACK YARD",W/2,38);
-
- ctx.fillStyle="#9a6a3a";ctx.fillRect(0,0,WALL,H);ctx.fillRect(W-WALL,0,WALL,H);
- ctx.fillStyle="#d09a56";ctx.fillRect(4,0,6,WALL?H:0);ctx.fillRect(W-10,0,6,H);
- ctx.fillStyle="#fbbf24";ctx.fillRect(WALL,FLOOR,W-WALL*2,7);
- ctx.fillStyle="#111827";
- for(let x=WALL;x<W-WALL;x+=48)ctx.fillRect(x,FLOOR,24,7);
+ // Bright cartoon park: sunshine, clouds, rolling hills, trees and flowers.
+ ctx.fillStyle="#ffe45c";ctx.beginPath();ctx.arc(405,83,39,0,Math.PI*2);ctx.fill();
+ ctx.strokeStyle="#fff19a";ctx.lineWidth=7;
+ for(let a=0;a<Math.PI*2;a+=Math.PI/4){ctx.beginPath();ctx.moveTo(405+Math.cos(a)*51,83+Math.sin(a)*51);ctx.lineTo(405+Math.cos(a)*64,83+Math.sin(a)*64);ctx.stroke()}
+ function cloud(x,y,s){ctx.fillStyle="rgba(255,255,255,.92)";ctx.beginPath();ctx.arc(x,y,18*s,0,Math.PI*2);ctx.arc(x+22*s,y-8*s,24*s,0,Math.PI*2);ctx.arc(x+48*s,y,19*s,0,Math.PI*2);ctx.fill()}
+ cloud(48,100,.9);cloud(238,145,.65);
+ ctx.fillStyle="#74d65c";ctx.beginPath();ctx.arc(80,540,205,Math.PI,0);ctx.arc(355,540,245,Math.PI,0);ctx.fill();
+ ctx.fillStyle="#4fbd4b";ctx.fillRect(0,505,W,145);
+ ctx.fillStyle="#43aa43";ctx.beginPath();ctx.arc(75,540,150,Math.PI,0);ctx.arc(395,550,175,Math.PI,0);ctx.fill();
+ function tree(x,y,s){ctx.fillStyle="#8b5a2b";ctx.fillRect(x-8*s,y,16*s,88*s);ctx.fillStyle="#258f45";ctx.beginPath();ctx.arc(x,y,36*s,0,Math.PI*2);ctx.arc(x-24*s,y+22*s,30*s,0,Math.PI*2);ctx.arc(x+25*s,y+23*s,31*s,0,Math.PI*2);ctx.fill();ctx.fillStyle="#53c95d";ctx.beginPath();ctx.arc(x-10*s,y-7*s,17*s,0,Math.PI*2);ctx.fill()}
+ tree(54,380,.8);tree(433,365,.9);
+ const flowerCols=["#ff4d8d","#fff45c","#b65cff","#ff7b39"];
+ for(let i=0;i<16;i++){const x=28+i*29,y=565+(i%3)*9;ctx.strokeStyle="#187b36";ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(x,y+13);ctx.lineTo(x,y+28);ctx.stroke();ctx.fillStyle=flowerCols[i%4];ctx.beginPath();ctx.arc(x,y,5,0,Math.PI*2);ctx.arc(x+6,y+4,5,0,Math.PI*2);ctx.arc(x-5,y+5,5,0,Math.PI*2);ctx.fill();ctx.fillStyle="#ffd84d";ctx.beginPath();ctx.arc(x,y+3,3,0,Math.PI*2);ctx.fill()}
+ ctx.fillStyle="#76502c";ctx.fillRect(0,0,WALL,H);ctx.fillRect(W-WALL,0,WALL,H);
+ ctx.fillStyle="#b97a42";ctx.fillRect(4,0,6,H);ctx.fillRect(W-10,0,6,H);
+ ctx.fillStyle="#d7a86e";ctx.fillRect(WALL,FLOOR,W-WALL*2,H-FLOOR);
+ ctx.fillStyle="#fff";ctx.font="bold 18px Arial";ctx.textAlign="center";ctx.fillText("STACK PARK",W/2,38);
 
  ctx.save();
  ctx.translate(shake?(Math.random()-.5)*shake:0,0);
@@ -117,7 +125,7 @@ function physics(){
      current.y=landing;
      const o=overlap(current,below);
 
-     if(o<12){
+     if(o<9){
        collapse("💥 MISSED!");
      }else{
        current.angle=0;
