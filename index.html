@@ -2,193 +2,126 @@
 <html lang="en">
 <head>
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
-<title>Coin Toss 0.4</title>
+<title>Coin Toss 0.6</title>
 <style>
-*{box-sizing:border-box}
-body{margin:0;background:#111;color:#fff;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;min-height:100vh;display:flex;justify-content:center}
-main{width:min(100vw,520px);padding:16px;text-align:center}
-h1{margin:3px 0;font-size:34px}.sub{color:#aaa;margin:0 0 12px}
-canvas{display:block;width:100%;height:auto;background:#222;border-radius:18px;touch-action:none}
-button{font-size:21px;font-weight:800;padding:14px 26px;border:0;border-radius:15px;margin:12px 4px;background:#fff;color:#111}
-#status{font-size:23px;font-weight:700;min-height:31px;margin:9px 0}
-#stats{color:#aaa;font-size:14px;line-height:1.5}
+body{margin:0;background:#111;color:#fff;font-family:Arial,sans-serif;text-align:center}
+main{max-width:520px;margin:auto;padding:14px}
+h1{margin:3px;font-size:34px}.sub{color:#aaa;margin:4px 0 10px}
+canvas{width:100%;background:#222;border-radius:18px}
+button{font-size:21px;font-weight:bold;padding:14px 25px;border:0;border-radius:15px;margin:10px 4px}
+#status{font-size:22px;font-weight:bold;min-height:30px}
+#sensor{font-size:13px;color:#aaa;line-height:1.45}
 </style>
 </head>
-<body>
-<main>
-<h1>🪙 COIN TOSS</h1>
-<p class="sub">Prototype 0.4 — controlled throw</p>
+<body><main>
+<h1>🪙 COIN TOSS</h1><p class="sub">Prototype 0.6 — motion diagnostic</p>
 <canvas id="game" width="484" height="650"></canvas>
 <div id="status">Press READY</div>
-<button id="ready">READY</button>
-<button id="again" style="display:none">THROW AGAIN</button>
-<div id="stats">Sensitivity reduced. One flick = one throw.</div>
+<button id="ready">READY</button><button id="again" style="display:none">THROW AGAIN</button>
+<div id="sensor">Sensor: not started</div>
 </main>
-
 <script>
 const canvas=document.getElementById("game"),ctx=canvas.getContext("2d");
 const W=canvas.width,H=canvas.height;
-const coin={x:W/2,y:H-82,vx:0,vy:0,spin:0,angle:0,r:23};
-let state="idle",samples=[],armedAt=0,lastSample=0,lastTime=performance.now();
+let coin={x:W/2,y:H-82,vx:0,vy:0,a:0},state="idle";
+let armedAt=0,lastThrow=0,baseAcc=null,peak=0,eventCount=0,permissionGranted=false;
+let lastAcc=0,lastRot=0;
 
 function draw(){
  ctx.clearRect(0,0,W,H);
  ctx.fillStyle="#333";ctx.fillRect(18,18,W-36,H-36);
-
- // wall
  ctx.fillStyle="#777";ctx.fillRect(18,42,W-36,18);
- ctx.fillStyle="#ddd";ctx.font="bold 16px sans-serif";ctx.textAlign="center";
- ctx.fillText("WALL",W/2,33);
-
- // target/landing guide
- ctx.strokeStyle="#666";ctx.setLineDash([6,8]);
- ctx.beginPath();ctx.moveTo(W/2,60);ctx.lineTo(W/2,H-48);ctx.stroke();ctx.setLineDash([]);
-
- // coin
- ctx.save();ctx.translate(coin.x,coin.y);ctx.rotate(coin.angle);
- ctx.beginPath();ctx.arc(0,0,coin.r,0,Math.PI*2);
- ctx.fillStyle="#c9a227";ctx.fill();ctx.lineWidth=4;ctx.strokeStyle="#f2d36b";ctx.stroke();
- ctx.fillStyle="#6f5510";ctx.font="bold 21px serif";ctx.textAlign="center";ctx.textBaseline="middle";
- ctx.fillText("10p",0,0);ctx.restore();
-
- if(state==="idle"){
-   ctx.fillStyle="#aaa";ctx.font="16px sans-serif";ctx.textAlign="center";
-   ctx.fillText("Flick once after READY",W/2,H-23);
- }
- requestAnimationFrame(draw);
+ ctx.fillStyle="#ddd";ctx.font="bold 16px Arial";ctx.textAlign="center";ctx.fillText("WALL",W/2,33);
+ ctx.strokeStyle="#666";ctx.setLineDash([6,8]);ctx.beginPath();ctx.moveTo(W/2,60);ctx.lineTo(W/2,H-48);ctx.stroke();ctx.setLineDash([]);
+ ctx.save();ctx.translate(coin.x,coin.y);ctx.rotate(coin.a);
+ ctx.beginPath();ctx.arc(0,0,23,0,Math.PI*2);ctx.fillStyle="#c9a227";ctx.fill();
+ ctx.lineWidth=4;ctx.strokeStyle="#f2d36b";ctx.stroke();
+ ctx.fillStyle="#6f5510";ctx.font="bold 21px serif";ctx.textBaseline="middle";ctx.fillText("10p",0,0);
+ ctx.restore();requestAnimationFrame(draw);
 }
 
-function magnitude(x,y,z){return Math.sqrt(x*x+y*y+z*z)}
+function sensorText(acc,rot){
+ sensor.innerHTML="Sensor events: "+eventCount+"<br>Acceleration: "+acc.toFixed(2)+" m/s² · Rotation: "+rot.toFixed(0)+" °/s";
+}
+
+function launch(power,side){
+ if(state!=="armed")return;
+ state="fly";
+ const p=Math.max(0,Math.min(1,power));
+ const speed=6+p*6;
+ coin={x:W/2,y:H-82,vx:Math.max(-1,Math.min(1,side))*speed*.5,vy:-speed,a:0};
+ status.textContent="🪙 THROW!";
+ sensor.innerHTML+="<br><b>FLICK DETECTED</b>";
+}
 
 function motion(e){
- if(state!=="armed")return;
- const a=e.acceleration, g=e.accelerationIncludingGravity, r=e.rotationRate;
- if(!g)return;
-
- const ax=a?(a.x||0):0, ay=a?(a.y||0):0, az=a?(a.z||0):0;
- const amag=magnitude(ax,ay,az);
- const t=performance.now();
-
- // Ignore the first part of the motion after READY and require a stronger,
- // short spike so simply moving the phone doesn't launch the coin.
- if(t-armedAt<350 || t-lastSample<80)return;
-
- samples.push({
-   t,ax,ay,az,amag,
-   rz:r?(r.gamma||0):0
- });
- lastSample=t;
-
- // Require a clear acceleration spike.
- if(amag>9.0 && samples.length>=2){
-   launch();
+ eventCount++;
+ let a=e.acceleration, g=e.accelerationIncludingGravity;
+ let ax=0,ay=0,az=0;
+ if(a && (a.x!=null||a.y!=null||a.z!=null)){
+   ax=a.x||0;ay=a.y||0;az=a.z||0;
+ }else if(g){
+   ax=g.x||0;ay=g.y||0;az=g.z||0;
+ }else{
+   sensor.textContent="Sensor events: "+eventCount+" · no acceleration data";
+   return;
  }
-}
+ let acc=Math.hypot(ax,ay,az);
+ let rr=e.rotationRate||{};
+ let rot=Math.max(Math.abs(rr.alpha||0),Math.abs(rr.beta||0),Math.abs(rr.gamma||0));
+ lastAcc=acc;lastRot=rot;sensorText(acc,rot);
 
-function launch(){
  if(state!=="armed")return;
- state="flying";
+ let now=performance.now();
+ if(now-armedAt<450){
+   baseAcc=baseAcc==null?acc:baseAcc*.9+acc*.1;
+   return;
+ }
+ let delta=Math.abs(acc-(baseAcc||9.8));
+ peak=Math.max(peak,delta);
 
- const peak=samples.reduce((m,s)=>Math.max(m,s.amag),0);
- const s=samples.reduce((m,x)=>x.amag>m.amag?x:s,samples[0]);
-
- // Much narrower power range to avoid wild launches.
- const power=Math.max(0,Math.min(1,(peak-9)/7));
- const speed=6.0 + power*7.0;
-
- // Use the direction of the flick, but limit sideways movement.
- let side=(s.ax/10);
- side=Math.max(-0.75,Math.min(0.75,side));
-
- coin.x=W/2;
- coin.y=H-82;
- coin.vx=side*speed*0.65;
- coin.vy=-speed;
- coin.spin=(s.rz||0)*0.018;
- coin.angle=0;
-
- document.getElementById("status").textContent="🪙 THROW!";
- document.getElementById("stats").textContent=
-   `Power ${Math.round(power*100)}% · Launch speed ${speed.toFixed(1)} · One-shot detection`;
+ // Use either a clear acceleration change OR a clear rotational flick.
+ // This is deliberately forgiving while we diagnose the iPhone sensor.
+ if(now-lastThrow>700 && (delta>0.9 || rot>30)){
+   lastThrow=now;
+   let power=Math.max(0,Math.min(1,Math.max(delta/6,rot/180)));
+   let side=Math.max(-1,Math.min(1,ax/8));
+   launch(power,side);
+ }
 }
 
 function update(){
- const now=performance.now();
- const dt=Math.min(0.032,(now-lastTime)/1000);
- lastTime=now;
-
- if(state==="flying"){
-   // Simple stable physics: gravity, friction and a soft wall impact.
-   coin.x+=coin.vx*(dt*60);
-   coin.y+=coin.vy*(dt*60);
-   coin.vy+=0.16*(dt*60);
-   coin.vx*=Math.pow(0.994,dt*60);
-   coin.angle+=coin.spin*(dt*60);
-   coin.spin*=Math.pow(0.985,dt*60);
-
-   // Keep the coin inside the play area.
-   if(coin.x<42){coin.x=42;coin.vx=Math.abs(coin.vx)*0.45}
-   if(coin.x>W-42){coin.x=W-42;coin.vx=-Math.abs(coin.vx)*0.45}
-
-   // Wall: don't launch it back off the screen. It loses most vertical speed.
-   if(coin.y-coin.r<=60){
-     coin.y=60+coin.r;
-     coin.vy=Math.abs(coin.vy)*0.12;
-     coin.vx*=0.55;
-   }
-
-   // Ground/finish zone.
-   if(coin.y>=H-82){
-     coin.y=H-82;
-     coin.vy*=0.18;
-     coin.vx*=0.92;
-     if(Math.abs(coin.vy)<0.35 && Math.abs(coin.vx)<0.12){
-       state="result";
-       document.getElementById("status").textContent="THROW COMPLETE";
-       document.getElementById("stats").textContent=
-         `Coin stopped · position ${Math.round(coin.x)} · distance from centre ${Math.round(Math.abs(coin.x-W/2))}`;
-       document.getElementById("again").style.display="inline-block";
+ if(state==="fly"){
+   coin.x+=coin.vx;coin.y+=coin.vy;coin.vy+=.13;coin.vx*=.996;coin.a+=.035;
+   if(coin.x<42){coin.x=42;coin.vx=Math.abs(coin.vx)*.35}
+   if(coin.x>W-42){coin.x=W-42;coin.vx=-Math.abs(coin.vx)*.35}
+   if(coin.y-23<=60){coin.y=83;coin.vy=Math.abs(coin.vy)*.12;coin.vx*=.45}
+   if(coin.y>=H-82){coin.y=H-82;coin.vy*=.1;coin.vx*=.88;
+     if(Math.abs(coin.vy)<.25){
+       state="done";status.textContent="THROW COMPLETE";
+       sensor.innerHTML="Stopped at "+Math.round(coin.x)+" · "+Math.round(Math.abs(coin.x-W/2))+" from centre";
+       again.style.display="inline-block";
      }
    }
  }
  requestAnimationFrame(update);
 }
 
-document.getElementById("ready").onclick=async()=>{
+ready.onclick=async()=>{
  try{
-   if(typeof DeviceMotionEvent!=="undefined" &&
-      typeof DeviceMotionEvent.requestPermission==="function"){
+   if(typeof DeviceMotionEvent!=="undefined" && typeof DeviceMotionEvent.requestPermission==="function"){
      const p=await DeviceMotionEvent.requestPermission();
      if(p!=="granted")throw Error("Motion permission was not granted.");
    }
-   samples=[];state="armed";armedAt=performance.now();lastSample=0;
-   document.getElementById("status").textContent="READY — FLICK!";
-   document.getElementById("stats").textContent="Wait a moment, then make one firm flick.";
-   setTimeout(()=>{
-     if(state==="armed"){
-       state="idle";
-       document.getElementById("status").textContent="No clear flick detected.";
-       document.getElementById("stats").textContent="Tap READY and try one slightly firmer flick.";
-     }
-   },4500);
- }catch(e){
-   document.getElementById("status").textContent="Motion permission needed.";
-   document.getElementById("stats").textContent=e.message;
- }
+   permissionGranted=true;state="armed";armedAt=performance.now();baseAcc=null;peak=0;lastThrow=0;
+   ready.style.display="none";status.textContent="READY — HOLD STILL";
+   sensor.textContent="Listening for iPhone motion… hold still for half a second, then flick.";
+   setTimeout(()=>{if(state==="armed"){state="idle";ready.style.display="inline-block";status.textContent="No flick detected";sensor.innerHTML="Sensor events: "+eventCount+"<br>Try READY again. If events stay at 0, the browser is not receiving motion data."}},5000);
+ }catch(e){status.textContent="Motion access not available";sensor.textContent=e.message}
 };
 
-document.getElementById("again").onclick=()=>{
- coin.x=W/2;coin.y=H-82;coin.vx=0;coin.vy=0;coin.angle=0;coin.spin=0;
- state="idle";
- document.getElementById("again").style.display="none";
- document.getElementById("ready").style.display="inline-block";
- document.getElementById("status").textContent="Press READY";
- document.getElementById("stats").textContent="Ready for another throw.";
-};
+again.onclick=()=>{coin={x:W/2,y:H-82,vx:0,vy:0,a:0};state="idle";again.style.display="none";ready.style.display="inline-block";status.textContent="Press READY";sensor.textContent="Ready."};
 
-window.addEventListener("devicemotion",motion);
-requestAnimationFrame(update);
-requestAnimationFrame(draw);
-</script>
-</body>
-</html>
+addEventListener("devicemotion",motion);
+draw();update();
+</script></body></html>
