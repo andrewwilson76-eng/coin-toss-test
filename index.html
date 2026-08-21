@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
-<title>Stack It 1.0</title>
+<title>Stack It 1.1</title>
 <style>
 *{box-sizing:border-box}body{margin:0;background:#12101e;color:#fff;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;display:flex;justify-content:center;min-height:100vh}
 main{width:min(100vw,520px);padding:14px;text-align:center}h1{font-size:38px;margin:4px 0}.sub{color:#bbb;margin:0 0 10px}
@@ -20,11 +20,11 @@ button{font-size:22px;font-weight:800;border:0;border-radius:16px;padding:14px 3
 const c=document.getElementById("game"),ctx=c.getContext("2d"),W=c.width,H=c.height;
 const FLOOR=610,BH=28,WALL=16,colors=["#ff4d6d","#ffb703","#00d4ff","#7cff6b","#b66cff","#ff7a00"];
 let state="menu",score=0,blocks=[],current=null,dir=1;
-let camera=0,shake=0,worldLean=0,worldLeanV=0;
+let camera=0,shake=0,worldLean=0,worldLeanV=0,instability=0;
 const statusEl=document.getElementById("status"),scoreEl=document.getElementById("score");
 
 function start(){
- state="playing";score=0;blocks=[];camera=0;shake=0;worldLean=0;worldLeanV=0;
+ state="playing";score=0;blocks=[];camera=0;shake=0;worldLean=0;worldLeanV=0;instability=0;
  blocks.push({x:W/2-52.5,y:FLOOR-BH,w:105,h:BH,color:"#fff",angle:0,vx:0,vy:0,falling:false});
  spawn();ui();
 }
@@ -170,6 +170,17 @@ function physics(){
    // Normalised displacement of the whole tower's centre of mass.
    const comOffset=(com-baseCentre)/(base.w/2);
 
+   // Check every joint, Jenga-style. At each level, the combined weight of
+   // everything above must remain over the block supporting it.
+   let upperMass=0,upperMoment=0,worstJoint=0;
+   for(let i=blocks.length-1;i>0;i--){
+     const upper=blocks[i],mass=Math.max(.7,upper.w/100);
+     upperMass+=mass;upperMoment+=centre(upper)*mass;
+     const support=blocks[i-1],upperCOM=upperMoment/upperMass;
+     const jointOffset=Math.abs(upperCOM-centre(support))/(support.w/2);
+     worstJoint=Math.max(worstJoint,jointOffset);
+   }
+
    // The more mass and height there is above the base, the larger the
    // effective torque and the slower the tower reacts.
    const heightFactor=Math.min(2.2,blocks.length/18);
@@ -196,9 +207,18 @@ function physics(){
 
    // Collapse threshold: centre of mass has moved beyond the support region.
    // We allow a small amount of dynamic movement before failure.
-   const collapseLimit=blocks.length < 16 ? 1.45 : blocks.length < 31 ? 1.18 : .96;
-   const leanLimit=blocks.length < 16 ? .10 : blocks.length < 31 ? .082 : .068;
-   if(Math.abs(comOffset)>collapseLimit||Math.abs(worldLean)>leanLimit){
+   // Bad balance must persist briefly, giving a readable wobble before failure.
+   const jointLimit=blocks.length < 10 ? 1.08 : blocks.length < 25 ? .98 : .91;
+   const excess=Math.max(0,worstJoint-jointLimit);
+   if(excess>0){
+     instability+=.7+excess*5;
+     worldLeanV+=Math.sign(com-baseCentre||1)*excess*.0008;
+     if(instability>12&&instability<42)statusEl.textContent="⚠️ WOBBLING!";
+   }else instability=Math.max(0,instability-.8);
+
+   const collapseLimit=blocks.length < 16 ? 1.35 : blocks.length < 31 ? 1.10 : .92;
+   const leanLimit=blocks.length < 16 ? .095 : blocks.length < 31 ? .078 : .064;
+   if(instability>42||Math.abs(comOffset)>collapseLimit||Math.abs(worldLean)>leanLimit){
      collapse("💥 GRAVITY WINS!");
    }
 
