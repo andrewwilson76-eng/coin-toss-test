@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
-<title>Stack It 0.5</title>
+<title>Stack It 0.6</title>
 <style>
 *{box-sizing:border-box}body{margin:0;background:#12101e;color:#fff;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;display:flex;justify-content:center;min-height:100vh}
 main{width:min(100vw,520px);padding:14px;text-align:center}h1{font-size:38px;margin:4px 0}.sub{color:#bbb;margin:0 0 10px}
@@ -18,7 +18,7 @@ button{font-size:22px;font-weight:800;border:0;border-radius:16px;padding:14px 3
 </main>
 <script>
 const c=document.getElementById("game"),ctx=c.getContext("2d"),W=c.width,H=c.height;
-const FLOOR=610,BH=28,colors=["#ff4d6d","#ffb703","#00d4ff","#7cff6b","#b66cff","#ff7a00"];
+const FLOOR=610,BH=28,WALL=16,colors=["#ff4d6d","#ffb703","#00d4ff","#7cff6b","#b66cff","#ff7a00"];
 let state="menu",score=0,blocks=[],current=null,dir=1;
 let camera=0,shake=0,worldLean=0,worldLeanV=0;
 const statusEl=document.getElementById("status"),scoreEl=document.getElementById("score");
@@ -30,7 +30,8 @@ function start(){
 }
 function spawn(){
  const w=Math.max(58,118-Math.min(55,blocks.length*.9));
- current={x:25,y:55,w,h:BH,color:colors[(blocks.length)%colors.length],
+ // Spawn in world space so it always appears at the same place on screen.
+ current={x:25,y:64-camera,w,h:BH,color:colors[(blocks.length)%colors.length],
           angle:0,vy:0,falling:false};
  dir=Math.random()<.5?-1:1;
 }
@@ -40,21 +41,33 @@ function centre(b){return b.x+b.w/2}
 
 function drawBlock(b){
  const sy=b.y+camera;
- ctx.save();ctx.translate(b.x+b.w/2,sy+b.h/2);ctx.rotate(b.angle);
+ const height=Math.max(0,FLOOR-b.y),sway=state==="playing"?worldLean*height*.52:0;
+ ctx.save();ctx.translate(b.x+b.w/2+sway,sy+b.h/2);ctx.rotate(b.angle+(state==="playing"?worldLean*height/560:0));
  ctx.fillStyle=b.color;ctx.beginPath();ctx.roundRect(-b.w/2,-b.h/2,b.w,b.h,5);ctx.fill();
  ctx.fillStyle="rgba(255,255,255,.28)";ctx.fillRect(-b.w/2+6,-b.h/2+4,b.w-12,5);
+ ctx.strokeStyle="rgba(36,20,28,.45)";ctx.lineWidth=2;ctx.strokeRect(-b.w/2+2,-b.h/2+2,b.w-4,b.h-4);
  ctx.restore();
 }
 function draw(){
  ctx.clearRect(0,0,W,H);
  const g=ctx.createLinearGradient(0,0,0,H);g.addColorStop(0,"#39296d");g.addColorStop(1,"#12101e");
  ctx.fillStyle=g;ctx.fillRect(0,0,W,H);
- ctx.fillStyle="#f4f1ff";ctx.font="bold 18px Arial";ctx.textAlign="center";ctx.fillText("STACK",W/2,38);
+ // A bright construction-yard arena with solid side walls.
+ ctx.fillStyle="#fde68a";ctx.beginPath();ctx.arc(410,86,38,0,Math.PI*2);ctx.fill();
+ ctx.fillStyle="rgba(17,24,39,.28)";
+ for(let x=25;x<W;x+=75){ctx.beginPath();ctx.moveTo(x,205);ctx.lineTo(x+55,145);ctx.lineTo(x+110,205);ctx.fill()}
+ ctx.fillStyle="#64748b";ctx.fillRect(0,510,W,140);
+ ctx.fillStyle="#475569";ctx.fillRect(0,548,W,102);
+ ctx.fillStyle="#263445";ctx.fillRect(0,FLOOR,W,H-FLOOR);
+ ctx.fillStyle="#f8fafc";ctx.font="bold 18px Arial";ctx.textAlign="center";ctx.fillText("STACK YARD",W/2,38);
+
+ ctx.fillStyle="#9a6a3a";ctx.fillRect(0,0,WALL,H);ctx.fillRect(W-WALL,0,WALL,H);
+ ctx.fillStyle="#d09a56";ctx.fillRect(4,0,6,WALL?H:0);ctx.fillRect(W-10,0,6,H);
+ ctx.fillStyle="#fbbf24";ctx.fillRect(WALL,FLOOR,W-WALL*2,7);
+ ctx.fillStyle="#111827";
+ for(let x=WALL;x<W-WALL;x+=48)ctx.fillRect(x,FLOOR,24,7);
 
  ctx.save();
- ctx.translate(W/2,0);
- ctx.rotate(worldLean);
- ctx.translate(-W/2,0);
  ctx.translate(shake?(Math.random()-.5)*shake:0,0);
  for(const b of blocks)drawBlock(b);
  if(current)drawBlock(current);
@@ -67,6 +80,15 @@ function draw(){
    ctx.font="18px Arial";ctx.fillText("Tap PLAY to try again",W/2,335);
  }
  requestAnimationFrame(draw);
+}
+
+function collapse(message){
+ if(state==="gameover")return;
+ state="gameover";camera=0;shake=18;statusEl.textContent=message;
+ for(let i=1;i<blocks.length;i++){
+   const b=blocks[i];b.falling=true;b.vx=(Math.random()-.5)*3.5+(centre(b)-W/2)*.008;b.vy=-Math.random()*2;b.av=(Math.random()-.5)*.055;
+ }
+ if(current){current.falling=true;current.vx=(Math.random()-.5)*4;current.vy=Math.max(0,current.vy||0);current.av=(Math.random()-.5)*.07}
 }
 
 function drop(){
@@ -96,7 +118,7 @@ function physics(){
      const o=overlap(current,below);
 
      if(o<12){
-       state="gameover";shake=16;statusEl.textContent="💥 MISSED!";
+       collapse("💥 MISSED!");
      }else{
        current.angle=0;
        blocks.push({...current,falling:false,vy:0});
@@ -147,17 +169,39 @@ function physics(){
    // Collapse threshold: centre of mass has moved beyond the support region.
    // We allow a small amount of dynamic movement before failure.
    if(Math.abs(comOffset)>0.92){
-     state="gameover";shake=20;statusEl.textContent="💥 GRAVITY WINS!";
+     collapse("💥 GRAVITY WINS!");
    }
 
    // Very high towers become less forgiving.
    if(blocks.length>45 && Math.abs(comOffset)>0.68){
-     state="gameover";shake=18;statusEl.textContent="💥 TOO UNSTABLE!";
+     collapse("💥 TOO UNSTABLE!");
    }
  }else{
    shake*=.94;
    worldLean*=.97;
    worldLeanV*=.97;
+ }
+
+ // After collapse, bricks bounce from the walls and settle into a heap.
+ if(state==="gameover"){
+   const debris=blocks.slice(1).concat(current?[current]:[]);
+   for(const b of debris){
+     if(!b.falling)continue;
+     b.vy=(b.vy||0)+.42;b.x+=b.vx||0;b.y+=b.vy;b.angle+=b.av||0;
+     if(b.x<WALL){b.x=WALL;b.vx=Math.abs(b.vx||0)*.62;b.av*=-.7}
+     if(b.x+b.w>W-WALL){b.x=W-WALL-b.w;b.vx=-Math.abs(b.vx||0)*.62;b.av*=-.7}
+     if(b.y+b.h>FLOOR){
+       b.y=FLOOR-b.h;b.vy=-Math.abs(b.vy)*.28;b.vx*=.82;b.av*=.72;
+       if(Math.abs(b.vy)<.55){b.vy=0;b.vx*=.8;b.av*=.8}
+     }
+   }
+   // Basic brick-on-brick support makes a loose, uneven rubble pile.
+   for(let i=0;i<debris.length;i++)for(let j=0;j<debris.length;j++){
+     if(i===j)continue;const a=debris[i],b=debris[j];
+     if(a.vy>0&&a.y+a.h>=b.y&&a.y+a.h<=b.y+12&&overlap(a,b)>10){
+       a.y=b.y-a.h;a.vy=-a.vy*.18;a.vx*=.88;a.av*=.86;
+     }
+   }
  }
 
  // ---- CAMERA ----
