@@ -1,0 +1,251 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+<title>Stack It 0.8</title>
+<style>
+*{box-sizing:border-box}body{margin:0;background:#12101e;color:#fff;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;display:flex;justify-content:center;min-height:100vh}
+main{width:min(100vw,520px);padding:14px;text-align:center}h1{font-size:38px;margin:4px 0}.sub{color:#bbb;margin:0 0 10px}
+canvas{width:100%;height:auto;border-radius:22px;display:block;background:#272044;touch-action:manipulation}
+button{font-size:22px;font-weight:800;border:0;border-radius:16px;padding:14px 30px;margin:12px 0;background:#fff;color:#17132a}
+#status{font-size:23px;font-weight:800;min-height:30px}#score{font-size:17px;color:#ddd}
+</style></head>
+<body><main>
+<h1>🧱 STACK IT</h1><p class="sub">Tap to drop • Balance the tower</p>
+<canvas id="game" width="484" height="650"></canvas>
+<div id="status">READY?</div><div id="score">Score: 0 • Blocks: 0</div>
+<button id="play">PLAY</button>
+</main>
+<script>
+const c=document.getElementById("game"),ctx=c.getContext("2d"),W=c.width,H=c.height;
+const FLOOR=610,BH=28,WALL=16,colors=["#ff4d6d","#ffb703","#00d4ff","#7cff6b","#b66cff","#ff7a00"];
+let state="menu",score=0,blocks=[],current=null,dir=1;
+let camera=0,shake=0,worldLean=0,worldLeanV=0;
+const statusEl=document.getElementById("status"),scoreEl=document.getElementById("score");
+
+function start(){
+ state="playing";score=0;blocks=[];camera=0;shake=0;worldLean=0;worldLeanV=0;
+ blocks.push({x:W/2-52.5,y:FLOOR-BH,w:105,h:BH,color:"#fff",angle:0,vx:0,vy:0,falling:false});
+ spawn();ui();
+}
+function spawn(){
+ const w=Math.max(43.5,88.5-Math.min(41.25,blocks.length*.675));
+ // Spawn in world space so it always appears at the same place on screen.
+ current={x:25,y:64-camera,w,h:BH,color:colors[(blocks.length)%colors.length],
+          angle:0,vy:0,falling:false};
+ dir=Math.random()<.5?-1:1;
+}
+function level(){return 1+Math.floor(Math.max(0,blocks.length-1)/15)}
+function ui(){scoreEl.textContent=`Score: ${score} • Blocks: ${blocks.length} • Speed: ${level()}`}
+function overlap(a,b){return Math.max(0,Math.min(a.x+a.w,b.x+b.w)-Math.max(a.x,b.x))}
+function centre(b){return b.x+b.w/2}
+
+function drawBlock(b){
+ const sy=b.y+camera;
+ // The loose block remains independent and level while moving AND falling.
+ // It joins the tower physics only after it has landed and entered blocks[].
+ const isIncoming=b===current&&state==="playing";
+ ctx.save();ctx.translate(b.x+b.w/2,sy+b.h/2);
+ // The incoming block stays level; landed blocks move together as one tower.
+ ctx.rotate(isIncoming?0:b.angle);
+ ctx.fillStyle=b.color;ctx.beginPath();ctx.roundRect(-b.w/2,-b.h/2,b.w,b.h,5);ctx.fill();
+ ctx.fillStyle="rgba(255,255,255,.28)";ctx.fillRect(-b.w/2+6,-b.h/2+4,b.w-12,5);
+ ctx.strokeStyle="rgba(36,20,28,.45)";ctx.lineWidth=2;ctx.strokeRect(-b.w/2+2,-b.h/2+2,b.w-4,b.h-4);
+ ctx.restore();
+}
+function draw(){
+ ctx.clearRect(0,0,W,H);
+ const g=ctx.createLinearGradient(0,0,0,H);g.addColorStop(0,"#55c8ff");g.addColorStop(.7,"#b9efff");g.addColorStop(1,"#f3fdff");
+ ctx.fillStyle=g;ctx.fillRect(0,0,W,H);
+ // Bright cartoon park: sunshine, clouds, rolling hills, trees and flowers.
+ ctx.fillStyle="#ffe45c";ctx.beginPath();ctx.arc(405,83,39,0,Math.PI*2);ctx.fill();
+ ctx.strokeStyle="#fff19a";ctx.lineWidth=7;
+ for(let a=0;a<Math.PI*2;a+=Math.PI/4){ctx.beginPath();ctx.moveTo(405+Math.cos(a)*51,83+Math.sin(a)*51);ctx.lineTo(405+Math.cos(a)*64,83+Math.sin(a)*64);ctx.stroke()}
+ function cloud(x,y,s){ctx.fillStyle="rgba(255,255,255,.92)";ctx.beginPath();ctx.arc(x,y,18*s,0,Math.PI*2);ctx.arc(x+22*s,y-8*s,24*s,0,Math.PI*2);ctx.arc(x+48*s,y,19*s,0,Math.PI*2);ctx.fill()}
+ cloud(48,100,.9);cloud(238,145,.65);
+ ctx.fillStyle="#74d65c";ctx.beginPath();ctx.arc(80,540,205,Math.PI,0);ctx.arc(355,540,245,Math.PI,0);ctx.fill();
+ ctx.fillStyle="#4fbd4b";ctx.fillRect(0,505,W,145);
+ ctx.fillStyle="#43aa43";ctx.beginPath();ctx.arc(75,540,150,Math.PI,0);ctx.arc(395,550,175,Math.PI,0);ctx.fill();
+ function tree(x,y,s){ctx.fillStyle="#8b5a2b";ctx.fillRect(x-8*s,y,16*s,88*s);ctx.fillStyle="#258f45";ctx.beginPath();ctx.arc(x,y,36*s,0,Math.PI*2);ctx.arc(x-24*s,y+22*s,30*s,0,Math.PI*2);ctx.arc(x+25*s,y+23*s,31*s,0,Math.PI*2);ctx.fill();ctx.fillStyle="#53c95d";ctx.beginPath();ctx.arc(x-10*s,y-7*s,17*s,0,Math.PI*2);ctx.fill()}
+ tree(54,380,.8);tree(433,365,.9);
+ const flowerCols=["#ff4d8d","#fff45c","#b65cff","#ff7b39"];
+ for(let i=0;i<16;i++){const x=28+i*29,y=565+(i%3)*9;ctx.strokeStyle="#187b36";ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(x,y+13);ctx.lineTo(x,y+28);ctx.stroke();ctx.fillStyle=flowerCols[i%4];ctx.beginPath();ctx.arc(x,y,5,0,Math.PI*2);ctx.arc(x+6,y+4,5,0,Math.PI*2);ctx.arc(x-5,y+5,5,0,Math.PI*2);ctx.fill();ctx.fillStyle="#ffd84d";ctx.beginPath();ctx.arc(x,y+3,3,0,Math.PI*2);ctx.fill()}
+ ctx.fillStyle="#76502c";ctx.fillRect(0,0,WALL,H);ctx.fillRect(W-WALL,0,WALL,H);
+ ctx.fillStyle="#b97a42";ctx.fillRect(4,0,6,H);ctx.fillRect(W-10,0,6,H);
+ ctx.fillStyle="#d7a86e";ctx.fillRect(WALL,FLOOR,W-WALL*2,H-FLOOR);
+ ctx.fillStyle="#fff";ctx.font="bold 18px Arial";ctx.textAlign="center";ctx.fillText("STACK PARK",W/2,38);
+
+ ctx.save();
+ ctx.translate(shake?(Math.random()-.5)*shake:0,0);
+ if(state==="playing"&&blocks.length){
+   const base=blocks[0],pivotX=centre(base),pivotY=FLOOR+camera;
+   const topY=Math.min(...blocks.map(b=>b.y)),towerHeight=Math.max(1,FLOOR-topY);
+   const minX=Math.min(...blocks.map(b=>b.x)),maxX=Math.max(...blocks.map(b=>b.x+b.w));
+   // Limit the connected tower to a realistic lean and keep it inside the walls.
+   const leftLimit=Math.max(0,(minX-WALL-4)/towerHeight);
+   const rightLimit=Math.max(0,(W-WALL-4-maxX)/towerHeight);
+   const visualLean=Math.max(-Math.min(.04,leftLimit),Math.min(Math.min(.04,rightLimit),worldLean));
+   ctx.translate(pivotX,pivotY);ctx.rotate(visualLean);ctx.translate(-pivotX,-pivotY);
+   for(const b of blocks)drawBlock(b);
+ }else{
+   for(const b of blocks)drawBlock(b);
+ }
+ ctx.restore();
+ // The incoming block is not part of the tower transform.
+ if(current)drawBlock(current);
+
+ if(state==="gameover"){
+   ctx.fillStyle="rgba(0,0,0,.62)";ctx.fillRect(0,0,W,H);
+   ctx.fillStyle="#fff";ctx.font="bold 38px Arial";ctx.fillText("TOWER COLLAPSED",W/2,245);
+   ctx.font="bold 28px Arial";ctx.fillText("Score "+score,W/2,295);
+   ctx.font="18px Arial";ctx.fillText("Tap PLAY to try again",W/2,335);
+ }
+ requestAnimationFrame(draw);
+}
+
+function collapse(message){
+ if(state==="gameover")return;
+ state="gameover";camera=0;shake=18;statusEl.textContent=message;
+ for(let i=1;i<blocks.length;i++){
+   const b=blocks[i];b.falling=true;b.vx=(Math.random()-.5)*3.5+(centre(b)-W/2)*.008;b.vy=-Math.random()*2;b.av=(Math.random()-.5)*.055;
+ }
+ if(current){current.falling=true;current.vx=(Math.random()-.5)*4;current.vy=Math.max(0,current.vy||0);current.av=(Math.random()-.5)*.07}
+}
+
+function drop(){
+ if(state!=="playing"||!current||current.falling)return;
+ current.falling=true;
+ current.vy=0;
+ statusEl.textContent="DROP!";
+}
+
+function physics(){
+ if(state==="playing"&&current&&!current.falling){
+   // Difficulty steps up after every group of 15 successfully stacked blocks.
+   const speed=Math.min(5.6,2.55+(level()-1)*.48);
+   current.x+=speed*dir;
+   if(current.x<=18){current.x=18;dir=1}
+   if(current.x+current.w>=W-18){current.x=W-18-current.w;dir=-1}
+ }
+
+ if(state==="playing"&&current&&current.falling){
+   const below=blocks[blocks.length-1];
+   current.vy+=0.48;
+   current.y+=current.vy;
+
+   // Use simple rectangular contact for the first prototype.
+   const landing=below.y-BH;
+   if(current.y>=landing){
+     current.y=landing;
+     const o=overlap(current,below);
+
+     if(o<9){
+       collapse("💥 MISSED!");
+     }else{
+       const oldLevel=level();
+       current.angle=0;
+       blocks.push({...current,falling:false,vy:0});
+       const quality=o/Math.min(current.w,below.w);
+       score+=Math.max(1,Math.round(quality*12));
+       current=null;spawn();ui();
+       statusEl.textContent=level()>oldLevel?`⚡ SPEED UP! LEVEL ${level()}`:"GOOD! Tap to drop";
+     }
+   }
+ }
+
+ // ---- JENGA-STYLE STABILITY MODEL ----
+ // Treat every block as a small mass. Gravity acts through each centre.
+ // The combined centre of mass determines the torque acting on the base.
+ if(blocks.length>=2&&state==="playing"){
+   let totalMass=0,comNumerator=0;
+   for(const b of blocks){
+     const mass=Math.max(0.7,b.w/100);
+     totalMass+=mass;
+     comNumerator+=centre(b)*mass;
+   }
+   const com=comNumerator/totalMass;
+   const base=blocks[0];
+   const baseCentre=centre(base);
+
+   // Normalised displacement of the whole tower's centre of mass.
+   const comOffset=(com-baseCentre)/(base.w/2);
+
+   // The more mass and height there is above the base, the larger the
+   // effective torque and the slower the tower reacts.
+   const heightFactor=Math.min(2.2,blocks.length/18);
+   const torque=comOffset*heightFactor;
+
+   // Damped rotational dynamics: torque changes sway velocity;
+   // damping represents friction/contact between blocks.
+   worldLeanV += torque*0.00062;
+   worldLeanV *= 0.978;
+   worldLean += worldLeanV;
+
+   // Small natural movement even when almost balanced.
+   const natural=Math.sin(performance.now()/430)*0.000075*heightFactor;
+   worldLeanV+=natural;
+
+   // Visual shake increases rapidly near the stability edge.
+   const danger=Math.min(1,Math.abs(comOffset)/0.72);
+   shake=Math.max(shake*.93,danger*danger*6);
+
+   // Collapse threshold: centre of mass has moved beyond the support region.
+   // We allow a small amount of dynamic movement before failure.
+   if(Math.abs(comOffset)>0.78||Math.abs(worldLean)>.045){
+     collapse("💥 GRAVITY WINS!");
+   }
+
+   // Very high towers become less forgiving.
+   if(blocks.length>45 && Math.abs(comOffset)>0.60){
+     collapse("💥 TOO UNSTABLE!");
+   }
+ }else{
+   shake*=.94;
+   worldLean*=.97;
+   worldLeanV*=.97;
+ }
+
+ // After collapse, bricks bounce from the walls and settle into a heap.
+ if(state==="gameover"){
+   const debris=blocks.slice(1).concat(current?[current]:[]);
+   for(const b of debris){
+     if(!b.falling)continue;
+     b.vy=(b.vy||0)+.42;b.x+=b.vx||0;b.y+=b.vy;b.angle+=b.av||0;
+     if(b.x<WALL){b.x=WALL;b.vx=Math.abs(b.vx||0)*.62;b.av*=-.7}
+     if(b.x+b.w>W-WALL){b.x=W-WALL-b.w;b.vx=-Math.abs(b.vx||0)*.62;b.av*=-.7}
+     if(b.y+b.h>FLOOR){
+       b.y=FLOOR-b.h;b.vy=-Math.abs(b.vy)*.28;b.vx*=.82;b.av*=.72;
+       if(Math.abs(b.vy)<.55){b.vy=0;b.vx*=.8;b.av*=.8}
+     }
+   }
+   // Basic brick-on-brick support makes a loose, uneven rubble pile.
+   for(let i=0;i<debris.length;i++)for(let j=0;j<debris.length;j++){
+     if(i===j)continue;const a=debris[i],b=debris[j];
+     if(a.vy>0&&a.y+a.h>=b.y&&a.y+a.h<=b.y+12&&overlap(a,b)>10){
+       a.y=b.y-a.h;a.vy=-a.vy*.18;a.vx*=.88;a.av*=.86;
+     }
+   }
+ }
+
+ // ---- CAMERA ----
+ // Keep the NEXT incoming block in the upper part of the screen.
+ // The camera is based on the newest block, not the bottom of the tower.
+ // As the tower grows, the world moves DOWN to create more falling room.
+ if(state==="playing"){
+   const newestY=(blocks[blocks.length-1]?.y ?? FLOOR-BH)+camera;
+   const desiredNewest=H*0.70;
+   const targetCamera=desiredNewest-(blocks[blocks.length-1]?.y ?? FLOOR-BH);
+   camera += (targetCamera-camera)*0.10;
+
+   // Ensure current falling block never starts/gets hidden at the top.
+   if(current && current.y+camera<70){
+     camera += (70-(current.y+camera))*0.08;
+   }
+ }
+
+ requestAnimationFrame(physics);
+}
+document.getElementById("play").onclick=start;
+c.addEventListener("pointerdown",drop);
+draw();physics();
+</script></body></html>
