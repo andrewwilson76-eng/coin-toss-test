@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
-<title>Stack It 1.1</title>
+<title>Stack It 1.2</title>
 <style>
 *{box-sizing:border-box}body{margin:0;background:#12101e;color:#fff;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;display:flex;justify-content:center;min-height:100vh}
 main{width:min(100vw,520px);padding:14px;text-align:center}h1{font-size:38px;margin:4px 0}.sub{color:#bbb;margin:0 0 10px}
@@ -20,7 +20,7 @@ button{font-size:22px;font-weight:800;border:0;border-radius:16px;padding:14px 3
 const c=document.getElementById("game"),ctx=c.getContext("2d"),W=c.width,H=c.height;
 const FLOOR=610,BH=28,WALL=16,colors=["#ff4d6d","#ffb703","#00d4ff","#7cff6b","#b66cff","#ff7a00"];
 let state="menu",score=0,blocks=[],current=null,dir=1;
-let camera=0,shake=0,worldLean=0,worldLeanV=0,instability=0;
+let camera=0,shake=0,worldLean=0,worldLeanV=0,instability=0,collapseStart=0;
 const statusEl=document.getElementById("status"),scoreEl=document.getElementById("score");
 
 function start(){
@@ -35,7 +35,7 @@ function spawn(){
           angle:0,vy:0,falling:false};
  dir=Math.random()<.5?-1:1;
 }
-function level(){return 1+Math.floor(Math.max(0,blocks.length-1)/15)}
+function level(){return 1+Math.floor(Math.max(0,blocks.length-1)/10)}
 function ui(){scoreEl.textContent=`Score: ${score} • Blocks: ${blocks.length} • Speed: ${level()}`}
 function overlap(a,b){return Math.max(0,Math.min(a.x+a.w,b.x+b.w)-Math.max(a.x,b.x))}
 function centre(b){return b.x+b.w/2}
@@ -104,8 +104,8 @@ function draw(){
 }
 
 function collapse(message){
- if(state==="gameover")return;
- state="gameover";camera=0;shake=18;statusEl.textContent=message;
+ if(state!=="playing")return;
+ state="collapsing";collapseStart=performance.now();shake=18;statusEl.textContent=message;
  for(let i=1;i<blocks.length;i++){
    const b=blocks[i];b.falling=true;b.vx=(Math.random()-.5)*3.5+(centre(b)-W/2)*.008;b.vy=-Math.random()*2;b.av=(Math.random()-.5)*.055;
  }
@@ -121,7 +121,7 @@ function drop(){
 
 function physics(){
  if(state==="playing"&&current&&!current.falling){
-   // Difficulty steps up after every group of 15 successfully stacked blocks.
+   // Difficulty steps up after every group of 10 successfully stacked blocks.
    const speed=Math.min(5.6,2.55+(level()-1)*.48);
    current.x+=speed*dir;
    if(current.x<=18){current.x=18;dir=1}
@@ -232,8 +232,9 @@ function physics(){
    worldLeanV*=.97;
  }
 
- // After collapse, bricks bounce from the walls and settle into a heap.
- if(state==="gameover"){
+ // During the collapse sequence, bricks bounce from the walls and settle.
+ if(state==="collapsing"){
+   camera*=.94;
    const debris=blocks.slice(1).concat(current?[current]:[]);
    for(const b of debris){
      if(!b.falling)continue;
@@ -251,6 +252,10 @@ function physics(){
      if(a.vy>0&&a.y+a.h>=b.y&&a.y+a.h<=b.y+12&&overlap(a,b)>10){
        a.y=b.y-a.h;a.vy=-a.vy*.18;a.vx*=.88;a.av*=.86;
      }
+   }
+   // Let the player watch the full fall before showing the results overlay.
+   if(performance.now()-collapseStart>2600){
+     state="gameover";shake=0;statusEl.textContent="TOWER COLLAPSED";
    }
  }
 
