@@ -2,19 +2,20 @@
 <html lang="en">
 <head>
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
-<title>Stack It 1.3</title>
+<title>Stack It 1.4</title>
 <style>
 *{box-sizing:border-box}body{margin:0;background:#12101e;color:#fff;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;display:flex;justify-content:center;min-height:100vh}
 main{width:min(100vw,520px);padding:14px;text-align:center}h1{font-size:38px;margin:4px 0}.sub{color:#bbb;margin:0 0 10px}
 canvas{width:100%;height:auto;border-radius:22px;display:block;background:#272044;touch-action:manipulation}
-button{font-size:22px;font-weight:800;border:0;border-radius:16px;padding:14px 30px;margin:12px 0;background:#fff;color:#17132a}
+button{font-size:22px;font-weight:800;border:0;border-radius:16px;padding:14px 30px;margin:12px 4px;background:#fff;color:#17132a}
+#sound{font-size:16px;padding:10px 16px;background:#ffe45c}
 #status{font-size:23px;font-weight:800;min-height:30px}#score{font-size:17px;color:#ddd}
 </style></head>
 <body><main>
 <h1>🧱 STACK IT</h1><p class="sub">Tap to drop • Balance the tower</p>
 <canvas id="game" width="484" height="650"></canvas>
 <div id="status">READY?</div><div id="score">Score: 0 • Blocks: 0</div>
-<button id="play">PLAY</button>
+<button id="play">PLAY</button><button id="sound">🔊 SOUND ON</button>
 </main>
 <script>
 const c=document.getElementById("game"),ctx=c.getContext("2d"),W=c.width,H=c.height;
@@ -23,12 +24,36 @@ let state="menu",score=0,blocks=[],current=null,dir=1;
 let camera=0,shake=0,worldLean=0,worldLeanV=0,instability=0,collapseStart=0,newBest=false;
 let bestBlocks=0;
 try{bestBlocks=Number(localStorage.getItem("stackItBestBlocks")||0)}catch(e){}
+let audioCtx=null,musicTimer=null,musicStep=0,soundOn=true;
 const statusEl=document.getElementById("status"),scoreEl=document.getElementById("score");
+
+function tone(freq,duration=.1,volume=.025,type="square",delay=0){
+ if(!soundOn)return;
+ try{
+   if(!audioCtx)audioCtx=new (window.AudioContext||window.webkitAudioContext)();
+   const now=audioCtx.currentTime+delay,o=audioCtx.createOscillator(),g=audioCtx.createGain();
+   o.type=type;o.frequency.setValueAtTime(freq,now);
+   g.gain.setValueAtTime(0,now);g.gain.linearRampToValueAtTime(volume,now+.01);g.gain.exponentialRampToValueAtTime(.0001,now+duration);
+   o.connect(g);g.connect(audioCtx.destination);o.start(now);o.stop(now+duration+.02);
+ }catch(e){}
+}
+function stopMusic(){if(musicTimer){clearInterval(musicTimer);musicTimer=null}}
+function startMusic(){
+ stopMusic();if(!soundOn)return;
+ try{if(!audioCtx)audioCtx=new (window.AudioContext||window.webkitAudioContext)();audioCtx.resume()}catch(e){}
+ const melody=[523,659,784,659,587,698,880,698,523,659,784,988,880,784,659,587];
+ musicStep=0;musicTimer=setInterval(()=>{
+   if(state!=="playing")return;
+   tone(melody[musicStep%melody.length],.13,.018,"square");
+   if(musicStep%4===0)tone(melody[musicStep%melody.length]/2,.18,.012,"triangle");
+   musicStep++;
+ },230);
+}
 
 function start(){
  state="playing";score=0;blocks=[];camera=0;shake=0;worldLean=0;worldLeanV=0;instability=0;newBest=false;
  blocks.push({x:W/2-52.5,y:FLOOR-BH,w:105,h:BH,color:"#fff",angle:0,vx:0,vy:0,falling:false});
- spawn();ui();
+ spawn();ui();startMusic();
 }
 function spawn(){
  const w=Math.max(43.5,88.5-Math.min(41.25,blocks.length*.675));
@@ -111,16 +136,20 @@ function draw(){
 function collapse(message){
  if(state!=="playing")return;
  state="collapsing";collapseStart=performance.now();shake=18;statusEl.textContent=message;
+ stopMusic();tone(105,.45,.07,"sawtooth");tone(68,.7,.065,"sawtooth",.18);tone(44,.9,.06,"triangle",.42);
+ try{if(navigator.vibrate)navigator.vibrate([120,60,180,80,360])}catch(e){}
  const finishedBlocks=placed();
  if(finishedBlocks>bestBlocks){
    bestBlocks=finishedBlocks;newBest=true;
    try{localStorage.setItem("stackItBestBlocks",String(bestBlocks))}catch(e){}
  }
  ui();
+ const foundationCentre=centre(blocks[0]);
  for(let i=1;i<blocks.length;i++){
-   const b=blocks[i];b.falling=true;b.vx=(Math.random()-.5)*3.5+(centre(b)-W/2)*.008;b.vy=-Math.random()*2;b.av=(Math.random()-.5)*.055;
+   const b=blocks[i];b.falling=true;b.delay=(i-1)*34;
+   b.vx=Math.sin(i*1.91)*2.3+(centre(b)-foundationCentre)*.005;b.vy=0;b.av=(Math.random()-.5)*.095;
  }
- if(current){current.falling=true;current.vx=(Math.random()-.5)*4;current.vy=Math.max(0,current.vy||0);current.av=(Math.random()-.5)*.07}
+ if(current){current.falling=true;current.delay=0;current.vx=(Math.random()-.5)*4;current.vy=Math.max(0,current.vy||0);current.av=(Math.random()-.5)*.1}
 }
 
 function drop(){
@@ -159,7 +188,8 @@ function physics(){
        const quality=o/Math.min(current.w,below.w);
        score+=Math.max(1,Math.round(quality*12));
        current=null;spawn();ui();
-       statusEl.textContent=level()>oldLevel?`⚡ SPEED UP! LEVEL ${level()}`:"GOOD! Tap to drop";
+       if(level()>oldLevel){statusEl.textContent=`⚡ SPEED UP! LEVEL ${level()}`;tone(660,.1,.04);tone(880,.16,.04,"square",.1)}
+       else{statusEl.textContent="GOOD! Tap to drop";tone(380+quality*260,.075,.025,"square")}
      }
    }
  }
@@ -248,11 +278,13 @@ function physics(){
    camera*=.94;
    const debris=blocks.slice(1).concat(current?[current]:[]);
    const baseCentre=centre(blocks[0]);
+   const collapseElapsed=performance.now()-collapseStart;
    for(const b of debris){
      if(!b.falling)continue;
-     // Gravity pulls down while a gentle inward force gathers the collapse
-     // around the original foundation block like a building implosion.
-     b.vx=(b.vx||0)+(baseCentre-centre(b))*.0032;
+     if(collapseElapsed<(b.delay||0))continue;
+     // Lower floors fail first. Once separated, a light inward pull creates
+     // a demolition-style implosion without keeping the tower rigid.
+     if(collapseElapsed>700)b.vx=(b.vx||0)+(baseCentre-centre(b))*.0011;
      b.vx=Math.max(-5,Math.min(5,b.vx));
      b.vy=(b.vy||0)+.42;b.x+=b.vx;b.y+=b.vy;b.angle+=b.av||0;
      if(b.x<WALL){b.x=WALL;b.vx=Math.abs(b.vx||0)*.62;b.av*=-.7}
@@ -262,12 +294,14 @@ function physics(){
        if(Math.abs(b.vy)<.55){b.vy=0;b.vx*=.8;b.av*=.8}
      }
    }
-   // Include the original foundation as the centre of the rubble pile.
-   const supports=[blocks[0],...debris];
-   for(let i=0;i<debris.length;i++)for(let j=0;j<supports.length;j++){
-     const a=debris[i],b=supports[j];if(a===b)continue;
-     if(a.vy>0&&a.y+a.h>=b.y&&a.y+a.h<=b.y+12&&overlap(a,b)>10){
-       a.y=b.y-a.h;a.vy=-a.vy*.18;a.vx*=.88;a.av*=.86;
+   // Let the structure break apart before rubble begins colliding and piling.
+   if(collapseElapsed>900){
+     const supports=[blocks[0],...debris];
+     for(let i=0;i<debris.length;i++)for(let j=0;j<supports.length;j++){
+       const a=debris[i],b=supports[j];if(a===b)continue;
+       if(a.vy>0&&a.y+a.h>=b.y&&a.y+a.h<=b.y+12&&overlap(a,b)>10){
+         a.y=b.y-a.h;a.vy=-a.vy*.18;a.vx*=.88;a.av*=.86;
+       }
      }
    }
    // Let the player watch the full fall before showing the results overlay.
@@ -289,6 +323,10 @@ function physics(){
  requestAnimationFrame(physics);
 }
 document.getElementById("play").onclick=start;
+document.getElementById("sound").onclick=()=>{
+ soundOn=!soundOn;document.getElementById("sound").textContent=soundOn?"🔊 SOUND ON":"🔇 SOUND OFF";
+ if(soundOn&&state==="playing")startMusic();else stopMusic();
+};
 c.addEventListener("pointerdown",drop);
 ui();draw();physics();
 </script></body></html>
